@@ -13,7 +13,34 @@
 #    under the License.
 
 import argparse
+import logging
 import os
+
+import github
+from github import Auth
+
+from autolabeler import targets
+
+
+def _setup_logging():
+    # create logger
+    logger = logging.getLogger('github-autolabeler')
+    logger.setLevel(logging.DEBUG)
+
+    # create console handler and set level to debug
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+
+    # create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # add formatter to ch
+    ch.setFormatter(formatter)
+
+    # add ch to logger
+    logger.addHandler(ch)
+
+    return logger
 
 
 def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -30,8 +57,8 @@ def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "-t", "--github-token", default=os.environ.get("GITHUB_TOKEN"),
         help="String GitHub API token to make labelling API calls. "
-             "It can be both a 'classic' GitHub tokens, or with the new "
-             "'fine-grained' GitHub tokens which include R/W access to "
+             "It can be both a 'classic' GitHub token, or a new "
+             "'fine-grained' GitHub token which includes R/W access to "
              "the Issues and Pull Requests.")
     parser.add_argument(
         "-l", "--label-definitions-file", type=argparse.FileType('r'),
@@ -45,7 +72,7 @@ def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 
 def _parse_target_argument(target: str) -> dict:
-    """ Parses the prvided target for the labelling action.
+    """ Parses the provided target for the labelling action.
 
     Supports inputs of the form:
     - username/repository_name
@@ -104,6 +131,8 @@ def _parse_target_argument(target: str) -> dict:
 
 
 def main():
+    LOG = _setup_logging()
+
     parser = argparse.ArgumentParser(
         "github-autolabeler",
         description="Python 3 utility for automatically labelling/triaging "
@@ -123,4 +152,11 @@ def main():
     # - load rules
     # - check labels generated
 
-    print(f"{_parse_target_argument(args.target)}")
+    LOG.info(f"{_parse_target_argument(args.target)}")
+
+    gh = github.Github(login_or_token=args.github_token)
+    # NOTE(aznashwan): required to load user:
+    _ = gh.get_user().login
+    gh.load(f)
+
+    _ = targets.RepoLabelsTarget(gh, "aznashwan", "cloudbase-init")
