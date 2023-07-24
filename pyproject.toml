@@ -1,0 +1,35 @@
+[project]
+name = "github-autolabeler"
+version = "0.0.1"
+description = "Python3 utility for easy labelling/triaging of GitHub PRs/Issues."
+authors = [
+    { name = "Cloudbase Solutions Srl", email = "support@cloudbasesolutions.com" },
+]
+license = { file = "LICENSE" }
+readme = "README.rst"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GPLv3",
+    "Operating System :: OS Independent",
+]
+
+# NOTE(aznashwan): `match` statements require 3.10.
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml",
+    "PyGithub",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/cloudbase/github-autolabeler"
+"Bug Tracker" = "https://github.com/cloudbase/github-autolabeler/issues"
+
+[build-system]
+requires = ["setuptools >= 61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["autolabeler"]
+
+[project.scripts]
+github-autolabeler = "autolabeler.main:main"
