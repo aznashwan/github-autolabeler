@@ -1,0 +1,74 @@
+# This defines a static static label named 'example-label' with the given props.
+example-label:
+  color: 0075ca  # blue
+  description: This is a simple example static label.
+
+
+# This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
+label-prefix:
+  sublabel-1:
+    color: 0075ca
+    description: This is a simple first sublabel.
+  sublabel-2:
+    color: d73a4a  # red
+    description: This is a simple second sublabel.
+
+
+# This will define as many labels as there are filepath regex matches.
+label-for-sample-file-{files-name-regex-group-1}:
+  color: 0075ca
+  description: This label was created for file {files-name-regex-group-1}.
+  selectors:
+    files:
+      # This will specify a regex to be matched against full filepaths in
+      # the repo tree. 'files-name-group-0' will be the entire filename.
+      name-regex: "samples/(.*).yaml"
+
+      # TODO(aznashwan):
+      # type: "<binary|text>"
+      # size: min/max filesizes for some "kind/bigblob"-type labels?
+
+
+# This will define a label named "bug" which will automatically be
+# associated with issues/PRs matching the provided regexes.
+bug:
+  color: d73a4a
+  description: This label signifies the Issue/PR is about a bug.
+  selectors:
+    regex:
+      # This allows for case insensitive searches. (default is false)
+      case-insensitive: true
+
+      # This will make the label be applied to PRs/Issues whose titles/descriptions
+      # match the given regex. (in this case, some simple keywords)
+      title: "(issue|bug|fix|problem|failure|error)"
+      description: "(issue|bug|problem|failure|error)"
+
+      # This will make the label applied to PRs/Issues where anyone comments
+      # the given magic string on a single line within the comment.
+      comments: "^(/label-me-as bug)$"
+      # Only allows maintainers to add this label via comment. (default is true)
+      maintainer-comments-only: false
+
+
+# This will define two labels named "pr-size-measure/{small,large}" that will
+# automatically get applied to Pull Requsts whose change counts match.
+pr-size-measure:
+  small:
+    color: 0075ca
+    description: |
+      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+    selectors:
+      lines-changed:
+        min: 0
+        max: 1000
+
+  large:
+    color: d73a4a
+    description: |
+      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+    selectors:
+      lines-changed:
+        min: 1000
+        # NOTE: setting to zero will remove any upper bound.
+        max: 0
