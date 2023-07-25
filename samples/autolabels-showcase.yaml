@@ -26,7 +26,7 @@ label-for-sample-file-{files-name-regex-group-1}:
 
       # TODO(aznashwan):
       # type: "<binary|text>"
-      # size: min/max filesizes for some "kind/bigblob"-type labels?
+      # size: min/max filesizes for some "kind/bigblob"-type label combos?
 
 
 # This will define a label named "bug" which will automatically be

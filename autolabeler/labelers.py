@@ -21,7 +21,7 @@ from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from selectors import Selector
+from autolabeler import selectors
 
 
 LOG = logging.getLogger()
@@ -38,15 +38,15 @@ class BaseLabeler(metaclass=abc.ABCMeta):
         raise NotImplemented
 
     @abc.abstractmethod
-    def get_lebels_for_issue(self, issue: Issue) -> list[Label]:
+    def get_labels_for_issue(self, issue: Issue) -> list[Label]:
         raise NotImplemented
 
 
-class Labeler(BaseLabeler):
+class SelectorLabeler(BaseLabeler):
     def __init__(self,
                  label_name: str,
                  label_color: str,
-                 selectors: list[Selector],
+                 selectors: list[selectors.Selector],
                  prefix: str=""):
         self._name = label_name
         self._color = label_color
@@ -67,12 +67,17 @@ class Labeler(BaseLabeler):
             raise ValueError(
                 f"Missing required fields {missing} in Labeler definition: {val}")
 
-        sels_defs = val.get("selectors", [])
-        sels = [Selector.from_dict(s) for s in sels_defs]
+        sels = []
+        sels_defs = val.get("selectors", {})
+        for sname, sbody in sels_defs.items():
+            try:
+                scls = selectors.get_selector_cls(sname, raise_if_missing=True)
+                sels.append(scls.from_dict(sbody))
+            except Exception as ex:
+                raise ValueError(
+                    f"Failed to load selector '{sname}' from payload {sbody}") from ex
 
         return cls(label_name, val['label-color'], sels, prefix=prefix)
-
-
 
 
 class PrefixLabeler(BaseLabeler):
@@ -88,7 +93,29 @@ class PrefixLabeler(BaseLabeler):
         self._separator = separator
         self._sublabelers = sublabelers
 
-    def _prefix_labels(self, labels: list[Label]) -> list[Label]:
-        for l in labels:
-            l.name = f"{self._prefix}{self._separator}{l.name}"
-        return labels
+    def get_labels_for_repo(self, repo: Repository) -> list[Label]:
+        raise NotImplemented
+
+    def get_labels_for_pr(self, pr: PullRequest) -> list[Label]:
+        raise NotImplemented
+
+    def get_labels_for_issue(self, issue: Issue) -> list[Label]:
+        raise NotImplemented
+
+
+
+def load_labelers_from_config(config: dict) -> list[BaseLabeler]:
+    toplevel_lebelers = []
+    for key, val in config.items():
+        # Assume it's a plain labeler until proven otherwise.
+        try:
+            toplevel_lebelers.append(SelectorLabeler.from_dict(key, val))
+            continue
+        except ValueError as err:
+            LOG.info(
+                f"Failed to load lebeler on key {key}, assuming it's a prefix: {err}")
+
+        prefixer = PrefixLabeler(key, load_labelers_from_config(val))
+        toplevel_lebelers.append(prefixer)
+
+    return toplevel_lebelers
