@@ -29,6 +29,7 @@ class Selector(withmetaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
     def from_dict(cls, val: dict):
+        _ = val
         raise NotImplemented
 
     @abc.abstractmethod
@@ -104,6 +105,7 @@ class RegexSelector(Selector):
         return res
 
     def _get_comment_matches(self, obj: Issue|PullRequest) -> dict:
+        _ = obj
         if self._re_comments:
             raise NotImplemented
 
@@ -174,6 +176,7 @@ def get_selector_cls(selector_name, raise_if_missing=True):
         raise ValueError(
             f"Unknown selector type {selector_name}. Supported selectors are: "
             f"{list(SELECTORS_NAME_MAP.keys())}")
+    return selector
 
 
 def _get_match_groups(
