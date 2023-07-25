@@ -13,7 +13,6 @@
 #    under the License.
 
 import abc
-import logging
 from typing import Self
 
 from github.Issue import Issue
@@ -22,9 +21,10 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from autolabeler import selectors
+from autolabeler import utils
 
 
-LOG = logging.getLogger()
+LOG = utils.getStdoutLogger(__name__)
 
 
 class BaseLabeler(metaclass=abc.ABCMeta):
@@ -62,7 +62,7 @@ class SelectorLabeler(BaseLabeler):
                 f"Expected dict with keys {required_fields}, "
                 f"got {val} ({type(val)})")
 
-        missing = [field in val for field in required_fields]
+        missing = [field for field in required_fields if field not in val]
         if missing:
             raise ValueError(
                 f"Missing required fields {missing} in Labeler definition: {val}")
@@ -71,13 +71,25 @@ class SelectorLabeler(BaseLabeler):
         sels_defs = val.get("selectors", {})
         for sname, sbody in sels_defs.items():
             try:
-                scls = selectors.get_selector_cls(sname, raise_if_missing=True)
-                sels.append(scls.from_dict(sbody))
+                # HACK(aznashwan): disable raising for testing.
+                scls = selectors.get_selector_cls(sname, raise_if_missing=False)
+                if scls:
+                    sels.append(scls.from_dict(sbody))
             except Exception as ex:
                 raise ValueError(
-                    f"Failed to load selector '{sname}' from payload {sbody}") from ex
+                    f"Failed to load selector '{sname}' from "
+                    f"payload {sbody}:\n{ex}") from ex
 
         return cls(label_name, val['label-color'], sels, prefix=prefix)
+
+    def get_labels_for_repo(self, repo: Repository) -> list[Label]:
+        raise NotImplemented
+
+    def get_labels_for_pr(self, pr: PullRequest) -> list[Label]:
+        raise NotImplemented
+
+    def get_labels_for_issue(self, issue: Issue) -> list[Label]:
+        raise NotImplemented
 
 
 class PrefixLabeler(BaseLabeler):
@@ -105,17 +117,18 @@ class PrefixLabeler(BaseLabeler):
 
 
 def load_labelers_from_config(config: dict) -> list[BaseLabeler]:
-    toplevel_lebelers = []
+    toplevel_labelers = []
     for key, val in config.items():
+        LOG.info(f"Attempting to load labeler from: {config}")
         # Assume it's a plain labeler until proven otherwise.
         try:
-            toplevel_lebelers.append(SelectorLabeler.from_dict(key, val))
+            toplevel_labelers.append(SelectorLabeler.from_dict(key, val))
             continue
-        except ValueError as err:
+        except (ValueError, TypeError) as err:
             LOG.info(
-                f"Failed to load lebeler on key {key}, assuming it's a prefix: {err}")
+                f"Failed to load labeler on key {key}, assuming it's a prefix: {err}")
 
         prefixer = PrefixLabeler(key, load_labelers_from_config(val))
-        toplevel_lebelers.append(prefixer)
+        toplevel_labelers.append(prefixer)
 
-    return toplevel_lebelers
+    return toplevel_labelers

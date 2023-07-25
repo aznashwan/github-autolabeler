@@ -13,19 +13,21 @@
 #    under the License.
 
 import abc
-import logging
 import re
 from typing import Self
+import typing
 
 from github.Issue import Issue
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
+from autolabeler import utils
 
-LOG = logging.getLogger()
+
+LOG = utils.getStdoutLogger(__name__)
 
 
-class Selector(withmetaclass=abc.ABCMeta):
+class Selector(metaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
     def from_dict(cls, val: dict):
@@ -166,16 +168,22 @@ class FilesSelector(Selector):
 
 SELECTORS_NAME_MAP = {
     "regex": RegexSelector,
-    "files": FilesSelector
+    "files": FilesSelector,
 }
 
 
-def get_selector_cls(selector_name, raise_if_missing=True):
+def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.Type:
     selector = SELECTORS_NAME_MAP.get(selector_name)
-    if raise_if_missing and not selector:
-        raise ValueError(
-            f"Unknown selector type {selector_name}. Supported selectors are: "
+
+    if not selector:
+        msg = (
+            f"Unknown selector type '{selector_name}'. Supported selectors are: "
             f"{list(SELECTORS_NAME_MAP.keys())}")
+        if raise_if_missing:
+            raise ValueError(msg)
+        else:
+            LOG.warn(msg)
+
     return selector
 
 
