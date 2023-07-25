@@ -1,23 +1,23 @@
 # This defines a static static label named 'example-label' with the given props.
 example-label:
-  color: 0075ca  # blue
-  description: This is a simple example static label.
+  label-color: 0075ca  # blue
+  label-description: This is a simple example static label.
 
 
 # This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
 label-prefix:
   sublabel-1:
-    color: 0075ca
-    description: This is a simple first sublabel.
+    label-color: 0075ca
+    label-description: This is a simple first sublabel.
   sublabel-2:
-    color: d73a4a  # red
-    description: This is a simple second sublabel.
+    label-color: d73a4a  # red
+    label-description: This is a simple second sublabel.
 
 
 # This will define as many labels as there are filepath regex matches.
 label-for-sample-file-{files-name-regex-group-1}:
-  color: 0075ca
-  description: This label was created for file {files-name-regex-group-1}.
+  label-color: 0075ca
+  label-description: This label was created for file {files-name-regex-group-1}.
   selectors:
     files:
       # This will specify a regex to be matched against full filepaths in
@@ -32,8 +32,8 @@ label-for-sample-file-{files-name-regex-group-1}:
 # This will define a label named "bug" which will automatically be
 # associated with issues/PRs matching the provided regexes.
 bug:
-  color: d73a4a
-  description: This label signifies the Issue/PR is about a bug.
+  label-color: d73a4a
+  label-description: This label signifies the Issue/PR is about a bug.
   selectors:
     regex:
       # This allows for case insensitive searches. (default is false)
@@ -55,8 +55,8 @@ bug:
 # automatically get applied to Pull Requsts whose change counts match.
 pr-size-measure:
   small:
-    color: 0075ca
-    description: |
+    label-color: 0075ca
+    label-description: |
       This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
     selectors:
       lines-changed:
@@ -64,8 +64,8 @@ pr-size-measure:
         max: 1000
 
   large:
-    color: d73a4a
-    description: |
+    label-color: d73a4a
+    label-description: |
       This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
     selectors:
       lines-changed:

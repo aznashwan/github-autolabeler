@@ -13,34 +13,17 @@
 #    under the License.
 
 import argparse
-import logging
+from io import IOBase
 import os
 
 import github
+import yaml
 from github import Auth
 
-from autolabeler import targets
+from autolabeler import labelers
+from autolabeler import utils
 
-
-def _setup_logging():
-    # create logger
-    logger = logging.getLogger('github-autolabeler')
-    logger.setLevel(logging.DEBUG)
-
-    # create console handler and set level to debug
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-
-    # create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    # add formatter to ch
-    ch.setFormatter(formatter)
-
-    # add ch to logger
-    logger.addHandler(ch)
-
-    return logger
+LOG = utils.getStdoutLogger(__name__)
 
 
 def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -130,9 +113,14 @@ def _parse_target_argument(target: str) -> dict:
     }
 
 
-def main():
-    LOG = _setup_logging()
+def load_yaml_file(path_or_file: str|IOBase) -> dict:
+    file = path_or_file
+    if isinstance(path_or_file, str):
+        file = open(path_or_file, 'r')
+    return yaml.safe_load(file)
 
+
+def main():
     parser = argparse.ArgumentParser(
         "github-autolabeler",
         description="Python 3 utility for automatically labelling/triaging "
@@ -147,16 +135,16 @@ def main():
             f"No GitHub API token provided via '-t/--github-token' argument "
              "or 'GITHUB_TOKEN' environment variable.")
 
-    # TODO(aznashwan):
-    # - parse config files
-    # - load rules
-    # - check labels generated
+    # gh = github.Github(login_or_token=args.github_token)
+    # _ = gh.get_user().login
+    # gh.load(f)
+    gh =  github.Github()
 
     LOG.info(f"{_parse_target_argument(args.target)}")
 
-    gh = github.Github(login_or_token=args.github_token)
-    # NOTE(aznashwan): required to load user:
-    _ = gh.get_user().login
-    gh.load(f)
+    lblrs = []
+    if args.label_definitions_file:
+        rules_config = load_yaml_file(args.label_definitions_file)
+        lblrs = labelers.load_labelers_from_config(rules_config)
 
-    _ = targets.RepoLabelsTarget(gh, "aznashwan", "cloudbase-init")
+    LOG.info(f"{lblrs}")
