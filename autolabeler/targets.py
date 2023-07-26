@@ -35,10 +35,12 @@ class BaseLabelsTarget(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def set_labels(self, labels: list[Label]):
+        _ = labels
         raise NotImplemented
 
     @abc.abstractmethod
     def remove_labels(self, labels: list[str]):
+        _ = labels
         raise NotImplemented
 
 
