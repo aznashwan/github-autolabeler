@@ -35,7 +35,7 @@ class Selector(metaclass=abc.ABCMeta):
         raise NotImplemented
 
     @abc.abstractmethod
-    def match(self, obj: object) -> dict:
+    def match(self, obj: object) -> list[dict]:
         """ Returns a dict of str key-values if the Github object is matched.
 
         Returned keys should follow a predictable namespacing model based on the
@@ -71,7 +71,7 @@ class RegexSelector(Selector):
         maintainer-comments-only: bool,
         """
         supported_keys = [
-            "case_insensitive", "title", "description",
+            "case-insensitive", "title", "description",
             "comments", "maintainer-comments", "maintainer-comments-only"]
         if not any(k in val for k in supported_keys):
             raise ValueError(
@@ -79,7 +79,7 @@ class RegexSelector(Selector):
                 f"({supported_keys}). Got {val}")
         
         kwargs = {
-            "case_insensitive": val.get("case_insensitive", False),
+            "case_insensitive": val.get("case-insensitive", False),
             "re_title": val.get("title", ""),
             "re_description": val.get("description", ""),
             "re_comments": val.get("comments", ""),
@@ -115,16 +115,16 @@ class RegexSelector(Selector):
         # pr.get_issue_comments/get_comments/get_review_comments() and match
         return {}
 
-    def match(self, obj: object) -> dict:
+    def match(self, obj: object) -> list[dict]:
         # NOTE(aznashwan): Only Issues/PRs have the concept of comments.
         if not isinstance(obj, (Issue, PullRequest)):
             LOG.warn(
                 f"RegexSelector got unsupported object type {type(obj)}: {obj}")
-            return {}
+            return []
 
-        res = {}
-        res.update(self._get_comment_matches(obj))
-        res.update(self._get_title_description_matches(obj))
+        res = []
+        res.append(self._get_comment_matches(obj))
+        res.append(self._get_title_description_matches(obj))
 
         return res
 
@@ -150,14 +150,14 @@ class FilesSelector(Selector):
 
         return cls(**kwargs)
 
-    def match(self, obj: Repository|PullRequest) -> dict:
+    def match(self, obj: Repository|PullRequest) -> list[dict]:
         # NOTE(aznashwan): Only Repositories/PRs have associated files.
         if not isinstance(obj, (Repository, PullRequest)):
             LOG.warn(
                 f"FileSelector got unsupported object type {type(obj)}: {obj}")
-            return {}
+            return []
 
-        res = {}
+        res = []
 
         # TODO:
         # - recusively gather all files and directories.
@@ -199,5 +199,7 @@ def _get_match_groups(
     if match:
         for i, group in enumerate(match.groups()):
             res[f"{prefix}group-{i}"] = group
+
+    LOG.debug(f"Matche result for {regex=} to {value=}: {res}")
 
     return res

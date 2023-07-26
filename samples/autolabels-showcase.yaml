@@ -70,5 +70,5 @@ pr-size-measure:
     selectors:
       lines-changed:
         min: 1000
-        # NOTE: setting to zero will remove any upper bound.
+        # NOTE: setting max to zero will remove any upper bound.
         max: 0
