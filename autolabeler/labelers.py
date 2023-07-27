@@ -126,25 +126,31 @@ class SelectorLabeler(BaseLabeler):
 
     def _get_labels_for_selector_matches(
             self, selector_matches: list[dict]) -> list[LabelParams]:
+        if not self._selectors:
+            # This is a static label and should be returned.
+            return [LabelParams(
+                self._name, self._color, self._description)]
+
         if self._selectors and not selector_matches:
             # NOTE(aznashwan): if no selector fired, no labels should be returned.
             LOG.debug(f"{self} matched no selector")
             return []
 
         label_defs = {}
-        for match in selector_matches:
-            name = self._name.format(**match)
-            new = LabelParams(
-                name, self._color,
-                self._description.format(**match))
-            if name not in label_defs:
-                label_defs[name] = new
-            elif label_defs[name] != new:
-                LOG.warning(
-                    f"{self} got conflicting colors/descriptions for label "
-                    f"{name}: value already present ({label_defs[name]}) "
-                    f"different from new value: {new}")
-        LOG.debug(f"{self} determined following labels: {label_defs}")
+        for match_set in selector_matches:
+            for match in match_set:
+                name = self._name.format(**match)
+                new = LabelParams(
+                    name, self._color,
+                    self._description.format(**match))
+                if name not in label_defs:
+                    label_defs[name] = new
+                elif label_defs[name] != new:
+                    LOG.warning(
+                        f"{self} got conflicting colors/descriptions for label "
+                        f"{name}: value already present ({label_defs[name]}) "
+                        f"different from new value: {new}")
+            LOG.debug(f"{self} determined following labels: {label_defs}")
 
         return list(label_defs.values())
 
@@ -153,6 +159,7 @@ class SelectorLabeler(BaseLabeler):
             self._run_selectors(repo))
 
     def _get_nonstatic_labels(self, obj: PullRequest|Issue):
+        # TODO(aznashwan): separate `StaticLabeler` class.
         # NOTE(aznashwan): this prevents static labellers with no selectors
         # being from applied to all PRs/Issues.
         if not self._selectors:
@@ -184,17 +191,24 @@ class PrefixLabeler(BaseLabeler):
         self._separator = separator
         self._sublabelers = sublabelers
 
+    def _prefix_label(self, label: LabelParams) -> LabelParams:
+        label.name = f"{self._prefix}{self._separator}{label.name}"
+        return label
+
+    def _prefix_labels(self, labels: list[LabelParams]) -> list[LabelParams]:
+        return list(map(self._prefix_label, labels))
+
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         res = [slblr.get_labels_for_repo(repo) for slblr in self._sublabelers]
-        return list(itertools.chain(*res))
+        return self._prefix_labels(list(itertools.chain(*res)))
 
     def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
         res = [slblr.get_labels_for_pr(pr) for slblr in self._sublabelers]
-        return list(itertools.chain(*res))
+        return self._prefix_labels(list(itertools.chain(*res)))
 
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         res = [slblr.get_labels_for_issue(issue) for slblr in self._sublabelers]
-        return list(itertools.chain(*res))
+        return self._prefix_labels(list(itertools.chain(*res)))
 
 
 

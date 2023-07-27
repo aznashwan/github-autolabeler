@@ -17,6 +17,7 @@ import re
 from typing import Self
 import typing
 
+from github.ContentFile import ContentFile
 from github.Issue import Issue
 from github.PullRequest import PullRequest
 from github.Repository import Repository
@@ -25,6 +26,8 @@ from autolabeler import utils
 
 
 LOG = utils.getStdoutLogger(__name__)
+
+FileContainingObject = typing.Union[Repository, PullRequest]
 
 
 class Selector(metaclass=abc.ABCMeta):
@@ -77,7 +80,7 @@ class RegexSelector(Selector):
             raise ValueError(
                 f"FileRegexSelector requires at least one regex key "
                 f"({supported_keys}). Got {val}")
-        
+
         kwargs = {
             "case_insensitive": val.get("case-insensitive", False),
             "re_title": val.get("title", ""),
@@ -143,7 +146,7 @@ class FilesSelector(Selector):
             raise ValueError(
                 f"FilesSelector requires at least one options key "
                 f"({supported_keys}). Got {val}")
-        
+
         kwargs = {
             "file_name_re": val.get("name-regex", ""),
             "file_type": val.get("type", "")}
@@ -157,11 +160,12 @@ class FilesSelector(Selector):
                 f"FileSelector got unsupported object type {type(obj)}: {obj}")
             return []
 
+        all_files = _list_files_recursively(obj, path="")
         res = []
-
-        # TODO:
-        # - recusively gather all files and directories.
-        # - match them all
+        for file in all_files:
+            match = _get_match_groups(self._file_name_re, file.path)
+            if match:
+                res.append(match)
 
         return res
 
@@ -185,6 +189,21 @@ def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.
             LOG.warn(msg)
 
     return selector
+
+
+def _list_files_for_object(obj: Repository|PullRequest, path: str="") -> list[ContentFile]:
+    return list(obj.get_contents(path))  # pyright: ignore
+
+
+def _list_files_recursively(obj: Repository|PullRequest, path="") -> list[ContentFile]:
+    files = []
+    for item in _list_files_for_object(obj, path=path):
+        if item.type == "dir":
+            files.extend(_list_files_recursively(obj, path=item.path))
+        else:
+            files.append(item)
+
+    return files
 
 
 def _get_match_groups(
