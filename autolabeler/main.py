@@ -135,10 +135,8 @@ def main():
             f"No GitHub API token provided via '-t/--github-token' argument "
              "or 'GITHUB_TOKEN' environment variable.")
 
-    # gh = github.Github(login_or_token=args.github_token)
-    # _ = gh.get_user().login
-    # gh.load(f)
-    gh =  github.Github()
+    gh = github.Github(login_or_token=args.github_token)
+    _ = gh.get_user().login
 
     LOG.info(f"{_parse_target_argument(args.target)}")
 
@@ -146,5 +144,10 @@ def main():
     if args.label_definitions_file:
         rules_config = load_yaml_file(args.label_definitions_file)
         lblrs = labelers.load_labelers_from_config(rules_config)
+
+    repo = gh.get_repo("aznashwan/github-autolabeler")
+
+    for labeler in lblrs:
+        print(f"\n{labeler}=> {labeler.get_labels_for_repo(repo)}\n")
 
     LOG.info(f"{lblrs}")
