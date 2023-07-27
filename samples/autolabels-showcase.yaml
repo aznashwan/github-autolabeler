@@ -58,7 +58,7 @@ manual-{regex-comments-group-2}:
   selectors:
     regex:
       maintainer-comments-only: true
-      comments: "^(/label-me-as ([a-z]+))$"
+      comments: "^(/label-me-as ([\\-a-z]+))$"
 
 
 # This will define two labels named "pr-size-measure/{small,large}" that will

@@ -16,7 +16,6 @@ import abc
 
 from github import Github
 from github.Issue import Issue
-from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
