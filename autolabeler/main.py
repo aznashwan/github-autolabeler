@@ -13,12 +13,12 @@
 #    under the License.
 
 import argparse
-from io import IOBase
+import json
 import os
+from io import IOBase
 
 import github
 import yaml
-from github import Auth
 
 from autolabeler import labelers
 from autolabeler import utils
@@ -138,16 +138,31 @@ def main():
     gh = github.Github(login_or_token=args.github_token)
     _ = gh.get_user().login
 
-    LOG.info(f"{_parse_target_argument(args.target)}")
-
     lblrs = []
     if args.label_definitions_file:
         rules_config = load_yaml_file(args.label_definitions_file)
         lblrs = labelers.load_labelers_from_config(rules_config)
+    LOG.info(f"Loaded following labelers: {lblrs}")
 
-    repo = gh.get_repo("aznashwan/github-autolabeler")
+    target = _parse_target_argument(args.target)
+    repo = gh.get_repo(f"{target['user']}/{target['repo']}")
 
+    op = None
+    match target['type']:
+        case None:
+            op = lambda l: l.get_labels_for_repo(repo)
+        case 'pull':
+            pr = repo.get_pull(target['id'])
+            op = lambda l: l.get_labels_for_pr(pr)
+        case 'issue':
+            issue = repo.get_issue(target['id'])
+            op = lambda l: l.get_labels_for_issue(issue)
+        case _:
+            raise ValueError("Unsupported target '%s'")
+
+    labels = []
     for labeler in lblrs:
-        print(f"\n{labeler}=> {labeler.get_labels_for_repo(repo)}\n")
+        labels.extend(op(labeler))
 
-    LOG.info(f"{lblrs}")
+    label_dicts = [l.to_dict() for l in labels]
+    print(f"\nResulting labels were: {json.dumps(label_dicts, indent=4)}")
