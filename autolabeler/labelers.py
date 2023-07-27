@@ -15,7 +15,7 @@
 import abc
 import dataclasses
 import itertools
-from typing import Self, Union
+from typing import Self
 
 from github.Issue import Issue
 from github.Label import Label
@@ -27,9 +27,6 @@ from autolabeler import utils
 
 
 LOG = utils.getStdoutLogger(__name__)
-
-
-LabellableObject = Union[Repository, PullRequest, Issue]
 
 
 @dataclasses.dataclass
@@ -48,11 +45,14 @@ class LabelParams:
                    val.get("color", ""),
                    val.get("description", ""))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str]:
         return {
             "name": self.name,
             "color": self.color,
             "description": self.description}
+
+    def to_label_creation_params(self) -> dict[str, str]:
+        return self.to_dict()
 
     def __eq__(self, other: Self) -> bool:
         return self.name == other.name and \
@@ -61,6 +61,8 @@ class LabelParams:
 
 
 class BaseLabeler(metaclass=abc.ABCMeta):
+    """ ABC offering independent labelling behavior for each Github resource type.
+    """
 
     @abc.abstractmethod
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
@@ -69,10 +71,12 @@ class BaseLabeler(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
+        _ = pr
         raise NotImplemented
 
     @abc.abstractmethod
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
+        _ = issue
         raise NotImplemented
 
 
@@ -121,7 +125,7 @@ class SelectorLabeler(BaseLabeler):
             val['label-color'], val['label-description'],
             sels, prefix=prefix)
 
-    def _run_selectors(self, obj: LabellableObject) -> list[dict]:
+    def _run_selectors(self, obj: Issue|PullRequest|Repository) -> list[dict]:
         # overly-drawn-out code for logging purposes:
         selector_matches = []
         for selector in self._selectors:

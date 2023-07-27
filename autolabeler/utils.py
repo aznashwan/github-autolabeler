@@ -13,8 +13,16 @@
 #    under the License.
 
 import logging
+from typing import Union
+
+from github.Issue import Issue
+from github.PullRequest import PullRequest
 
 
+LabellableObject = Union[PullRequest, Issue]
+
+
+LOG = logging.getLogger()
 __LOGGER = None
 
 
