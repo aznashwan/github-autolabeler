@@ -88,3 +88,5 @@ def main():
     labels = label_manager.generate_labels()
     labels_dicts = [l.to_dict() for l in labels]
     print(f"\nResulting labels were: {json.dumps(labels_dicts, indent=4)}")
+
+    label_manager.sync_labels()
