@@ -35,6 +35,11 @@ class LabelParams:
     color: str
     description: str
 
+    def __init__(self, name: str, color: str, description: str):
+        self.name = name
+        self.color = color
+        self.description = description.strip()
+
     @classmethod
     def from_label(cls, label: Label) -> Self:
         return cls(label.name, label.color, str(label.description))
@@ -175,8 +180,14 @@ class SelectorLabeler(BaseLabeler):
         return list(label_defs.values())
 
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
-        return self._get_labels_for_selector_matches(
-            self._run_selectors(repo))
+        # If this a simple label with a static name, it always applies to the repo.
+        try:
+            self._name.format()
+            return [LabelParams(self._name, self._color, self._description)]
+        except KeyError:
+            # Else, we must run an generate the selector:
+            return self._get_labels_for_selector_matches(
+                self._run_selectors(repo))
 
     def _get_nonstatic_labels(self, obj: PullRequest|Issue):
         # TODO(aznashwan): separate `StaticLabeler` class.
