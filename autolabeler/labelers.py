@@ -48,6 +48,12 @@ class LabelParams:
                    val.get("color", ""),
                    val.get("description", ""))
 
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "color": self.color,
+            "description": self.description}
+
     def __eq__(self, other: Self) -> bool:
         return self.name == other.name and \
                self.color == other.color and \
@@ -139,10 +145,20 @@ class SelectorLabeler(BaseLabeler):
         label_defs = {}
         for match_set in selector_matches:
             for match in match_set:
-                name = self._name.format(**match)
-                new = LabelParams(
-                    name, self._color,
-                    self._description.format(**match))
+                new = None
+                try:
+                    name = self._name.format(**match)
+                    description = self._description.format(**match)
+                    new = LabelParams(
+                        name, self._color,
+                        description)
+                except Exception as ex:
+                    msg = (
+                        f"Failed to format match data into '{self._name}' and "
+                        f"'{self._description}'. Selector match value were: {match}")
+                    LOG.error(msg)
+                    raise KeyError(msg) from ex
+
                 if name not in label_defs:
                     label_defs[name] = new
                 elif label_defs[name] != new:

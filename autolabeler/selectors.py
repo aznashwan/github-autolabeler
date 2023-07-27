@@ -38,7 +38,7 @@ class Selector(metaclass=abc.ABCMeta):
         raise NotImplemented
 
     @abc.abstractmethod
-    def match(self, obj: object) -> list[dict]:
+    def match(self, obj: object, file_cache: list[ContentFile]=[]) -> list[dict]:
         """ Returns a dict of str key-values if the Github object is matched.
 
         Returned keys should follow a predictable namespacing model based on the
@@ -118,7 +118,7 @@ class RegexSelector(Selector):
         # pr.get_issue_comments/get_comments/get_review_comments() and match
         return {}
 
-    def match(self, obj: object) -> list[dict]:
+    def match(self, obj: object, _: list[ContentFile]=[]) -> list[dict]:
         # NOTE(aznashwan): Only Issues/PRs have the concept of comments.
         if not isinstance(obj, (Issue, PullRequest)):
             LOG.warn(
@@ -153,17 +153,22 @@ class FilesSelector(Selector):
 
         return cls(**kwargs)
 
-    def match(self, obj: Repository|PullRequest) -> list[dict]:
+    def match(self, obj: Repository|PullRequest,
+              file_cache: list[ContentFile]=[]) -> list[dict]:
         # NOTE(aznashwan): Only Repositories/PRs have associated files.
         if not isinstance(obj, (Repository, PullRequest)):
             LOG.warn(
                 f"FileSelector got unsupported object type {type(obj)}: {obj}")
             return []
 
-        all_files = _list_files_recursively(obj, path="")
+        all_files = file_cache
+        if not all_files:
+            all_files = list_files_recursively(obj, path="")
+
         res = []
         for file in all_files:
             match = _get_match_groups(self._file_name_re, file.path)
+            match = {f"files-name-regex-{k}": match[k] for k in match}
             if match:
                 res.append(match)
 
@@ -191,15 +196,15 @@ def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.
     return selector
 
 
-def _list_files_for_object(obj: Repository|PullRequest, path: str="") -> list[ContentFile]:
+def list_files_for_object(obj: Repository|PullRequest, path: str="") -> list[ContentFile]:
     return list(obj.get_contents(path))  # pyright: ignore
 
 
-def _list_files_recursively(obj: Repository|PullRequest, path="") -> list[ContentFile]:
+def list_files_recursively(obj: Repository|PullRequest, path="") -> list[ContentFile]:
     files = []
-    for item in _list_files_for_object(obj, path=path):
+    for item in list_files_for_object(obj, path=path):
         if item.type == "dir":
-            files.extend(_list_files_recursively(obj, path=item.path))
+            files.extend(list_files_recursively(obj, path=item.path))
         else:
             files.append(item)
 
@@ -216,9 +221,10 @@ def _get_match_groups(
 
     match = re.match(regex, value, *flags)
     if match:
+        res[f"{prefix}group-0"] = value
         for i, group in enumerate(match.groups()):
-            res[f"{prefix}group-{i}"] = group
+            res[f"{prefix}group-{i+1}"] = group
 
-    LOG.debug(f"Matche result for {regex=} to {value=}: {res}")
+    LOG.debug(f"Match result for {regex=} to {value=}: {res}")
 
     return res
