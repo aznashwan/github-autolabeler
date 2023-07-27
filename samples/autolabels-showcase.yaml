@@ -17,7 +17,8 @@ label-prefix:
 # This will define as many labels as there are filepath regex matches.
 label-for-sample-file-{files-name-regex-group-1}:
   label-color: 0075ca
-  label-description: This label was created for file {files-name-regex-group-1}.
+  # NOTE: "group-0" is the entire filepath.
+  label-description: This label was created for file '{files-name-regex-group-0}'.
   selectors:
     files:
       # This will specify a regex to be matched against full filepaths in
