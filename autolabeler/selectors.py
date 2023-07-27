@@ -109,15 +109,25 @@ class RegexSelector(Selector):
 
         return res
 
-    def _get_comment_matches(self, obj: Issue|PullRequest) -> dict:
-        _ = obj
-        # if self._re_comments:
-        #     return NotImplemented
+    def _get_comment_matches(self, obj: Issue|PullRequest) -> list[dict]:
+        if not self._re_comments:
+            return []
 
-        # TODO(aznashwan):
-        # pr.get_issue_comments/get_comments/get_review_comments() and match
+        comments = []
+        if isinstance(obj, Issue):
+            comments = [c.body for c in obj.get_comments()]
+        else:
+            # TODO(aznashwan): handle Review Comments too.
+            comments = [c.body for c in obj.as_issue().get_comments()]
 
-        return {}
+        res = []
+        for comm in comments:
+            res.append(_get_match_groups(
+                # NOTE: PyGithub refers to issue/PR descriptions as their "body".
+                self._re_comments, comm, prefix="regex-comments-",
+                case_insensitive=self._case_insensitive))
+
+        return res
 
     def match(self, obj: object, _: list[ContentFile]=[]) -> list[dict]:
         # NOTE(aznashwan): Only Issues/PRs have the concept of comments.
@@ -126,6 +136,7 @@ class RegexSelector(Selector):
                 f"RegexSelector got unsupported object type {type(obj)}: {obj}")
             return []
 
+        # TODO(aznashwan): move this into `_get_comment_matches()`?
         if self._re_maintainer_comments:
             repo = None
             if isinstance(obj, Issue):
@@ -138,13 +149,10 @@ class RegexSelector(Selector):
                     f"Avoiding setting label from non-maintainer {obj.user}")
                 return []
 
-        res = [m
-            for m in [
-                self._get_comment_matches(obj),
-                self._get_title_description_matches(obj)]
-            if m]
+        res = self._get_comment_matches(obj)
+        res.append(self._get_title_description_matches(obj))
 
-        return res
+        return [m for m in res if m]
 
 
 class FilesSelector(Selector):
@@ -264,7 +272,7 @@ def _get_match_groups(
     if case_insensitive:
         flags = [re.IGNORECASE]
 
-    match = re.match(regex, value, *flags)
+    match = re.search(regex, value, *flags)
     if match:
         res[f"{prefix}group-0"] = value
         for i, group in enumerate(match.groups()):
