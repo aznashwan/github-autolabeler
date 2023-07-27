@@ -30,21 +30,21 @@ class BaseLabelsTarget(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_labels(self) -> list[LabelParams]:
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def set_labels(self, labels: list[LabelParams]):
         _ = labels
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def remove_labels(self, labels: list[str]):
         _ = labels
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def get_target_handle(self):
-        raise NotImplemented
+        return NotImplemented
 
 
 class RepoLabelsTarget(BaseLabelsTarget):
@@ -148,12 +148,12 @@ class ObjectLabellingTarget(BaseLabelsTarget):
                 if self._item_id:
                     target = repo.get_issue(self._item_id)
                 else:
-                    raise NotImplemented
+                    return NotImplemented
             case "pull" | "pulls":
                 if self._item_id:
                     target = repo.get_pull(self._item_id)
                 else:
-                    raise NotImplemented
+                    return NotImplemented
             case _:
                 raise ValueError(
                     f"Unsupported repo labelling target: {self._item_type}")

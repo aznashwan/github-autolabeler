@@ -35,7 +35,7 @@ class Selector(metaclass=abc.ABCMeta):
     @abc.abstractclassmethod
     def from_dict(cls, val: dict):
         _ = val
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def match(self, obj: object, file_cache: list[ContentFile]=[]) -> list[dict]:
@@ -47,7 +47,7 @@ class Selector(metaclass=abc.ABCMeta):
             "check1": "<value of match for check1>"
         }
         """
-        raise NotImplemented
+        return NotImplemented
 
 
 class RegexSelector(Selector):
@@ -94,13 +94,13 @@ class RegexSelector(Selector):
     def _get_title_description_matches(self, obj: PullRequest|Issue) -> dict:
         res = {}
 
-        if self._re_title:
+        if self._re_title and obj.title:
             res.update(
                 _get_match_groups(
                     self._re_title, obj.title, prefix="title-",
                     case_insensitive=self._case_insensitive))
 
-        if self._re_description:
+        if self._re_description and obj.body:
             res.update(
                 _get_match_groups(
                     # NOTE: PyGithub refers to issue/PR descriptions as their "body".
@@ -111,11 +111,12 @@ class RegexSelector(Selector):
 
     def _get_comment_matches(self, obj: Issue|PullRequest) -> dict:
         _ = obj
-        if self._re_comments:
-            raise NotImplemented
+        # if self._re_comments:
+        #     return NotImplemented
 
         # TODO(aznashwan):
         # pr.get_issue_comments/get_comments/get_review_comments() and match
+
         return {}
 
     def match(self, obj: object, _: list[ContentFile]=[]) -> list[dict]:
@@ -125,9 +126,23 @@ class RegexSelector(Selector):
                 f"RegexSelector got unsupported object type {type(obj)}: {obj}")
             return []
 
-        res = []
-        res.append(self._get_comment_matches(obj))
-        res.append(self._get_title_description_matches(obj))
+        if self._re_maintainer_comments:
+            repo = None
+            if isinstance(obj, Issue):
+                repo = obj.repository
+            else:
+                repo = obj.as_issue().repository
+
+            if repo.get_collaborator_permission(obj.user) != 'admin':
+                LOG.info(
+                    f"Avoiding setting label from non-maintainer {obj.user}")
+                return []
+
+        res = [m
+            for m in [
+                self._get_comment_matches(obj),
+                self._get_title_description_matches(obj)]
+            if m]
 
         return res
 
@@ -154,7 +169,7 @@ class FilesSelector(Selector):
         return cls(**kwargs)
 
     def match(self, obj: Repository|PullRequest,
-              file_cache: list[ContentFile]=[]) -> list[dict]:
+              file_cache: list[str]=[]) -> list[dict]:
         # NOTE(aznashwan): Only Repositories/PRs have associated files.
         if not isinstance(obj, (Repository, PullRequest)):
             LOG.warn(
@@ -163,16 +178,46 @@ class FilesSelector(Selector):
 
         all_files = file_cache
         if not all_files:
-            all_files = list_files_recursively(obj, path="")
+            lister = FileLister(obj)
+            all_files = lister.list_file_paths()
 
         res = []
-        for file in all_files:
-            match = _get_match_groups(self._file_name_re, file.path)
+        for path in all_files:
+            match = _get_match_groups(self._file_name_re, path)
             match = {f"files-name-regex-{k}": match[k] for k in match}
             if match:
                 res.append(match)
 
         return res
+
+
+class FileLister():
+
+    def __init__(self, obj: Repository|PullRequest):
+        self._obj = obj
+
+    def _list_files_from_repo(self, repo: Repository, path: str=""):
+        files = []
+        for item in repo.get_contents(path):  # pyright: ignore
+            if item.type == "dir":
+                files.extend(self._list_files_from_repo(repo, item.path))
+            else:
+                files.append(item)
+
+        return files
+
+    def _list_files_from_pr(self, pr: PullRequest):
+        return list(pr.get_files())
+
+    def list_file_paths(self) -> list[str]:
+        if isinstance(self._obj, Repository):
+            return [f.path for f in self._list_files_from_repo(self._obj, "")]
+        elif isinstance(self._obj, PullRequest):
+            return [f.filename for f in self._list_files_from_pr(self._obj)]
+        raise TypeError(
+            f"Can't list files for object {self._obj} ({type(self._obj)})")
+
+
 
 
 SELECTORS_NAME_MAP = {
@@ -196,15 +241,15 @@ def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.
     return selector
 
 
-def list_files_for_object(obj: Repository|PullRequest, path: str="") -> list[ContentFile]:
+def list_files_for_repo(obj: Repository, path: str="") -> list[ContentFile]:
     return list(obj.get_contents(path))  # pyright: ignore
 
 
-def list_files_recursively(obj: Repository|PullRequest, path="") -> list[ContentFile]:
+def list_all_files_for_repo(obj: Repository, path="") -> list[ContentFile]:
     files = []
-    for item in list_files_for_object(obj, path=path):
+    for item in list_files_for_repo(obj, path=path):
         if item.type == "dir":
-            files.extend(list_files_recursively(obj, path=item.path))
+            files.extend(list_all_files_for_repo(obj, path=item.path))
         else:
             files.append(item)
 

@@ -67,17 +67,17 @@ class BaseLabeler(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         _ = repo
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
         _ = pr
-        raise NotImplemented
+        return NotImplemented
 
     @abc.abstractmethod
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         _ = issue
-        raise NotImplemented
+        return NotImplemented
 
 
 class SelectorLabeler(BaseLabeler):
