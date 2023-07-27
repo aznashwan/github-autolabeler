@@ -16,7 +16,9 @@ import abc
 
 from github import Github
 from github.Issue import Issue
+from github.Label import Label
 from github.PullRequest import PullRequest
+from github.Repository import Repository
 
 from autolabeler.labelers import LabelParams
 from autolabeler import utils
@@ -79,10 +81,11 @@ class RepoLabelsTarget(BaseLabelsTarget):
             f"Updating following labels on repo {self._user}/{self._name}: "
             f"{labels_to_update}")
         for l in labels_to_update:
-            existing_labels_map[l.name].edit(l.name, l.color, l.description)
+            elabel = existing_labels_map[l.name]
+            elabel.edit(l.name, l.color, l.description)
+            elabel.update()
             LOG.debug(
-                f"Updated repo {self._user}/{self._name} label "
-                f"{existing_labels_map[l.name]} to: {l}")
+                f"Updated repo {self._user}/{self._name} label {elabel} to: {l}")
 
         labels_to_create = [
             l for l in labels if l.name not in existing_labels_map]
@@ -160,10 +163,38 @@ class ObjectLabellingTarget(BaseLabelsTarget):
 
         return target
 
+    def _get_repo(self) -> Repository:
+        if isinstance(self._target_obj, PullRequest):
+            return self._target_obj.as_issue().repository
+        return self._target_obj.repository
+
+    def _ensure_repo_labels_exist(self, labels: list[LabelParams]):
+        repo = self._get_repo()
+        existing_labels_map = {l.name: l for l in repo.get_labels()}
+
+        missing = []
+        for label in labels:
+            if label.name in existing_labels_map:
+                elabel = LabelParams.from_label(existing_labels_map[label.name])
+                if label != elabel:
+                    raise Exception(
+                        f"Found conflicting label definition for {label} while "
+                        f"applying to {self._target_obj}: {elabel}")
+            else:
+                missing.append(label)
+
+        if missing:
+            repo_labeler = RepoLabelsTarget(self._client, self._user, self._repo)
+            LOG.info(
+                f"Creating follow new labels on repo {repo} for {self._target_obj}: {missing}")
+            repo_labeler.set_labels(missing)
+
     def get_labels(self) -> list[LabelParams]:
         return [LabelParams.from_label(l) for l in self._target_obj.get_labels()]
 
     def set_labels(self, labels: list[LabelParams]):
+        self._ensure_repo_labels_exist(labels)
+
         # NOTE(aznashwan): `set_labels()` overwrites the whole label list,
         # so we must union the label sets ourselves.
         old_labels = self.get_labels()
@@ -173,7 +204,11 @@ class ObjectLabellingTarget(BaseLabelsTarget):
         if label_names_to_add:
             LOG.info(f"Adding following labels to "
                      f"{self._get_target_resource_path()}: {label_names_to_add}")
-            self._target_obj.set_labels(*label_names_to_add)
+            labels_to_add = [
+                l.name
+                for l in old_labels
+                if l.name in label_names_to_add]
+            self._target_obj.set_labels(*labels_to_add)
 
     def remove_labels(self, labels: list[str]):
         existing_labels_map = {l.name: l for l in self._target_obj.get_labels()}
