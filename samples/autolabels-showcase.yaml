@@ -52,6 +52,15 @@ bug:
       maintainer-comments-only: false
 
 
+manual-{regex-comments-group-2}:
+  label-color: d73a4a
+  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
+  selectors:
+    regex:
+      maintainer-comments-only: true
+      comments: "^(/label-me-as ([a-z]+))$"
+
+
 # This will define two labels named "pr-size-measure/{small,large}" that will
 # automatically get applied to Pull Requsts whose change counts match.
 pr-size-measure:

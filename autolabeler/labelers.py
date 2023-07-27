@@ -161,7 +161,7 @@ class SelectorLabeler(BaseLabeler):
                         f"Failed to format match data into '{self._name}' and "
                         f"'{self._description}'. Selector match value were: {match}")
                     LOG.error(msg)
-                    raise KeyError(msg) from ex
+                    continue
 
                 if name not in label_defs:
                     label_defs[name] = new
