@@ -16,6 +16,7 @@ import abc
 
 from github import Github
 from github.Issue import Issue
+from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
@@ -167,7 +168,7 @@ class ObjectLabellingTarget(BaseLabelsTarget):
             return self._target_obj.as_issue().repository
         return self._target_obj.repository
 
-    def _ensure_repo_labels_exist(self, labels: list[LabelParams]):
+    def _ensure_repo_labels_exist(self, labels: list[LabelParams]) -> list[Label]:
         repo = self._get_repo()
         existing_labels_map = {l.name: l for l in repo.get_labels()}
 
@@ -188,11 +189,15 @@ class ObjectLabellingTarget(BaseLabelsTarget):
                 f"Creating follow new labels on repo {repo} for {self._target_obj}: {missing}")
             repo_labeler.set_labels(missing)
 
+        # NOTE: refetch the labels:
+        return [
+            l for l in repo.get_labels() if l.name in [ll.name for ll in labels]]
+
     def get_labels(self) -> list[LabelParams]:
         return [LabelParams.from_label(l) for l in self._target_obj.get_labels()]
 
     def set_labels(self, labels: list[LabelParams]):
-        self._ensure_repo_labels_exist(labels)
+        label_objects_map = {l.name: l for l in self._ensure_repo_labels_exist(labels)}
 
         # NOTE(aznashwan): `set_labels()` overwrites the whole label list,
         # so we must union the label sets ourselves.
@@ -204,9 +209,8 @@ class ObjectLabellingTarget(BaseLabelsTarget):
             LOG.info(f"Adding following labels to "
                      f"{self._get_target_resource_path()}: {label_names_to_add}")
             labels_to_add = [
-                l.name
-                for l in old_labels
-                if l.name in label_names_to_add]
+                label_objects_map[l]
+                for l in label_names_to_add]
             self._target_obj.set_labels(*labels_to_add)
 
     def remove_labels(self, labels: list[str]):
