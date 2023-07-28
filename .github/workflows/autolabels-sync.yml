@@ -1,0 +1,45 @@
+# Workflow for automatically labelling the autolabeler repo.
+
+name: Autolabels Sync
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  # NOTE: required to pull GCR Docker image if fork is private.
+  packages: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened]
+  # NOTE: issue_comment triggers for both Issues and PRs.
+  issue_comment:
+    types: [created, edited, deleted]
+
+jobs:
+  autolabel:
+    runs-on: ubuntu-latest
+    container: ghcr.io/aznashwan/github-autolabeler:main
+
+    steps:
+      - name: Checkout.
+        uses: actions/checkout@v3
+
+      - name: "Run autolabelling."
+        run: |
+          TARGET="${{ github.repository }}"
+          if [ "${{ github.event.pull_request.number }}" ]; then
+            TARGET="$TARGET/pull/${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event.issue.number }}" ]; then
+            TARGET="$TARGET/issue/${{ github.event.issue.number }}"
+          fi
+
+          github-autolabeler \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --label-definitions-file "autolabels.yml" \
+            "$TARGET" \
+            sync
