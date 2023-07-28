@@ -22,5 +22,5 @@ jobs:
           github-autolabeler \
             --github-token ${{ secrets.GITHUB_TOKEN }} \
             --label-definitions-file "autolabels.yml" \
+            ${{ github.repository }} \
             sync
-            ${{ github.repository }}

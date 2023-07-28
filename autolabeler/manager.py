@@ -97,11 +97,12 @@ class LabelsManager():
                     labeler, self._labelling_target.get_target_handle()))  # pyright: ignore
         return labels
 
-    def sync_labels(self):
+    def sync_labels(self) -> list[LabelParams]:
         """ Applies all labels to the target, updating them if need be. """
         labels = self.generate_labels()
         LOG.info(f"Applying following labels to {self._target_str}: {labels}")
         self._labelling_target.set_labels(labels)
+        return labels
 
     def remove_undefined(self):
         """ Deletes all labels which are not defined in the config from the target. """

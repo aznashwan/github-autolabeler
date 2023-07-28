@@ -38,6 +38,13 @@ def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
              Adding 'issues/open' (note the plural) will target all open issues.
              Adding 'issues' or 'pulls' will target all issues/PRs.""")
     parser.add_argument(
+        "command",
+        choices=("generate", "sync", "purge"),
+        help="Labelling command to execute. Option include: "
+              "- generate: generates labels based on the config and prints them"
+              "- sync: syncs labels based on the config"
+              "- purge: removes all labels defined in the config from the target")
+    parser.add_argument(
         "-t", "--github-token", default=os.environ.get("GITHUB_TOKEN"),
         help="String GitHub API token to make labelling API calls. "
              "It can be both a 'classic' GitHub token, or a new "
@@ -46,10 +53,10 @@ def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "-l", "--label-definitions-file", type=argparse.FileType('r'),
         help="String path to a JSON/YAML file containing label definitions.")
-    parser.add_argument(
-        "-r", "--replies-definitions-file", type=argparse.FileType('r'),
-        help="String path to a JSON/YAML file containing issue/PR autoreply "
-             "rules.")
+    # parser.add_argument(
+    #     "-r", "--replies-definitions-file", type=argparse.FileType('r'),
+    #     help="String path to a JSON/YAML file containing issue/PR autoreply "
+    #          "rules.")
 
     return parser
 
@@ -84,9 +91,18 @@ def main():
     if args.label_definitions_file:
         rules_config = load_yaml_file(args.label_definitions_file)
 
+    labels = []
     label_manager = manager.LabelsManager(gh, args.target, rules_config)
-    labels = label_manager.generate_labels()
-    labels_dicts = [l.to_dict() for l in labels]
-    print(f"\nResulting labels were: {json.dumps(labels_dicts, indent=4)}")
 
-    label_manager.sync_labels()
+    match args.command:
+        case "generate":
+            labels = label_manager.generate_labels()
+        case "sync":
+            labels = label_manager.sync_labels()
+        case "purge":
+            raise NotImplementedError("no purging yet")
+        case other:
+            raise ValueError(f"Unsupported command: {other}")
+
+    labels_dicts = [l.to_dict() for l in labels]
+    print(json.dumps(labels_dicts, indent=4))
