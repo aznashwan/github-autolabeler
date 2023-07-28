@@ -85,7 +85,8 @@ def main():
 
     gh = github.Github(login_or_token=args.github_token)
     # NOTE(aznashwan): transparent login through __getattr__:
-    _ = gh.get_user().login
+    # NOTE^2: login API is completely inaccessible to GitHub action tokens.
+    # _ = gh.get_user().login
 
     rules_config = {}
     if args.label_definitions_file:
