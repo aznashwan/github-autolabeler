@@ -186,12 +186,11 @@ class ObjectLabellingTarget(BaseLabelsTarget):
         if missing:
             repo_labeler = RepoLabelsTarget(self._client, self._user, self._repo)
             LOG.info(
-                f"Creating follow new labels on repo {repo} for {self._target_obj}: {missing}")
+                f"Creating following new labels on repo {repo} for {self._target_obj}: {missing}")
             repo_labeler.set_labels(missing)
 
-        # NOTE: refetch the labels:
-        return [
-            l for l in repo.get_labels() if l.name in [ll.name for ll in labels]]
+        # NOTE: refetch all repo labels:
+        return [l for l in repo.get_labels()]
 
     def get_labels(self) -> list[LabelParams]:
         return [LabelParams.from_label(l) for l in self._target_obj.get_labels()]
