@@ -3,6 +3,7 @@ example-label:
   label-color: 0075ca  # blue
   label-description: This is a simple example static label.
 
+# Test to see if labels get applied in PR.
 
 # This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
 label-prefix:
