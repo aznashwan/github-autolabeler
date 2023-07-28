@@ -1,0 +1,84 @@
+# This defines a static static label named 'example-label' with the given props.
+example-label:
+  label-color: 0075ca  # blue
+  label-description: This is a simple example static label.
+
+
+# This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
+label-prefix:
+  sublabel-1:
+    label-color: 0075ca
+    label-description: This is a simple first sublabel.
+  sublabel-2:
+    label-color: d73a4a  # red
+    label-description: This is a simple second sublabel.
+
+
+# This will define as many labels as there are filepath regex matches.
+label-for-sample-file-{files-name-regex-group-1}:
+  label-color: 0075ca
+  # NOTE: "group-0" is the entire filepath.
+  label-description: This label was created for file '{files-name-regex-group-0}'.
+  selectors:
+    files:
+      # This will specify a regex to be matched against full filepaths in
+      # the repo tree. 'files-name-group-0' will be the entire filename.
+      name-regex: "samples/(.*).yaml"
+
+      # TODO(aznashwan):
+      # type: "<binary|text>"
+      # size: min/max filesizes for some "kind/bigblob"-type label combos?
+
+
+# This will define a label named "bug" which will automatically be
+# associated with issues/PRs matching the provided regexes.
+bug:
+  label-color: d73a4a
+  label-description: This label signifies the Issue/PR is about a bug.
+  selectors:
+    regex:
+      # This allows for case insensitive searches. (default is false)
+      case-insensitive: true
+
+      # This will make the label be applied to PRs/Issues whose titles/descriptions
+      # match the given regex. (in this case, some simple keywords)
+      title: "(issue|bug|fix|problem|failure|error)"
+      description: "(issue|bug|problem|failure|error)"
+
+      # This will make the label applied to PRs/Issues where anyone comments
+      # the given magic string on a single line within the comment.
+      comments: "^(/label-me-as bug)$"
+      # Only allows maintainers to add this label via comment. (default is true)
+      maintainer-comments-only: false
+
+
+manual-{regex-comments-group-2}:
+  label-color: d73a4a
+  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
+  selectors:
+    regex:
+      maintainer-comments-only: true
+      comments: "^(/label-me-as ([\\-a-z]+))$"
+
+
+# This will define two labels named "pr-size-measure/{small,large}" that will
+# automatically get applied to Pull Requsts whose change counts match.
+pr-size-measure:
+  small:
+    label-color: 0075ca
+    label-description: |
+      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+    selectors:
+      lines-changed:
+        min: 0
+        max: 1000
+
+  large:
+    label-color: d73a4a
+    label-description: |
+      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+    selectors:
+      lines-changed:
+        min: 1000
+        # NOTE: setting max to zero will remove any upper bound.
+        max: 0
