@@ -1,0 +1,42 @@
+name: 'Cloudbase Autolabeller'
+description: 'One-stop solution for managing all your labels with a crystal-clear config.'
+
+inputs:
+  target:  # id of input
+    description: |
+      Target for the labelling action.
+      Can be the full URL or resource path of the repo or repo object, such as:
+        - myuser/myrepo
+        - muyser/myrepo/pull/N
+        - myuser/myrepo/issues/N
+    required: true
+  command:
+    description: |
+      The labelling command to run. Options are 'generate', 'sync', and 'purge'.
+  config_file_path:
+    description: |
+      Path to the labels configuration file.
+  token:
+    description: |
+      GitHub token to use for the labelling actions.
+      Can be a 'classic' token or a 'fine-grained' token with full repo/issue/PR access.
+
+outputs:
+  # Can be referenced using ${{ action_id.outputs.labels }}
+  labels:
+    description: 'JSON listing the label definitions which were added/modified.'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - --github-token
+    - ${{ inputs.token }}
+    - --label-definitions-file
+    - ${{ inputs.config_file_path }}
+    - ${{ inputs.command }}
+    - ${{ inputs.target }}
+
+branding:
+  icon: 'bookmark'
+  color: 'purple'
