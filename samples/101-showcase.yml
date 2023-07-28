@@ -4,7 +4,7 @@ example-label:
   label-description: This is a simple example static label.
 
 
-# This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
+# This defines two "namespaced" static labels named: label-prefix/sublabel-{1,2}.
 label-prefix:
   sublabel-1:
     label-color: 0075ca
@@ -52,9 +52,12 @@ bug:
       maintainer-comments-only: false
 
 
+# This will define a label which any project maintainer may automatically
+# set on Issues/PRs by commenting '/label-me-as $LABEL':
 manual-{regex-comments-group-2}:
   label-color: d73a4a
-  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
+  label-description: |
+    "This label was defined through a maintainer comment with: {regex-comments-group-1}"
   selectors:
     regex:
       maintainer-comments-only: true
