@@ -2,11 +2,17 @@
 
 name: Auto-labelling.
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  # NOTE: required to pull image if fork is private.
+  packages: read
+
 on:
   workflow_dispatch:
   push:
     branches: [main]
-
 
 jobs:
   autolabel:
