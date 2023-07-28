@@ -1,5 +1,6 @@
-# This defines a static static label named 'example-label' with the given props.
+# This defines a static label named 'example-label' with the given props.
 example-label:
+  # NOTE: 'label-color' and 'label-description' are always required.
   label-color: 0075ca  # blue
   label-description: This is a simple example static label.
 
@@ -14,7 +15,7 @@ label-prefix:
     label-description: This is a simple second sublabel.
 
 
-# This will define as many labels as there are filepath regex matches.
+# This will define as many labels as there are file matches in the repo.
 label-for-sample-file-{files-name-regex-group-1}:
   label-color: 0075ca
   # NOTE: "group-0" is the entire filepath.
@@ -52,8 +53,8 @@ bug:
       maintainer-comments-only: false
 
 
-# This will define a label which any project maintainer may automatically
-# set on Issues/PRs by commenting '/label-me-as $LABEL':
+# This will allow project maintainers to automatically generate and
+# set labels on Issues/PRs by commenting '/label-me-as $LABEL':
 manual-{regex-comments-group-2}:
   label-color: d73a4a
   label-description: |
