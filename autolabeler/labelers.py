@@ -22,6 +22,7 @@ from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
+from autolabeler import actions
 from autolabeler import selectors
 from autolabeler import utils
 
@@ -84,6 +85,11 @@ class BaseLabeler(metaclass=abc.ABCMeta):
         _ = issue
         return NotImplemented
 
+    @abc.abstractmethod
+    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+        _ = obj
+        return NotImplemented
+
 
 class SelectorLabeler(BaseLabeler):
     def __init__(self,
@@ -91,15 +97,15 @@ class SelectorLabeler(BaseLabeler):
                  label_color: str,
                  label_description: str,
                  selectors: list[selectors.Selector],
-                 prefix: str=""):
+                 actioner: actions.BasePostLabellingAction|None=None):
         self._name = label_name
         self._color = label_color
         self._description = label_description
+        self._actioner = actioner
         self._selectors = selectors
-        self._prefix = prefix
 
     @classmethod
-    def from_dict(cls, label_name: str, val: dict, prefix: str="") -> Self:
+    def from_dict(cls, label_name: str, val: dict) -> Self:
         required_fields = [
             "label-color", "label-description"]
         if not type(val) is dict:
@@ -125,12 +131,16 @@ class SelectorLabeler(BaseLabeler):
                     f"Failed to load selector '{sname}' from "
                     f"payload {sbody}:\n{ex}") from ex
 
+        actioner = None
+        actioner_def = val.get("action", {})
+        if actioner_def:
+            actioner = actions.OnMatchFormatAction.from_dict(actioner_def)
+
         return cls(
             label_name,
-            val['label-color'], val['label-description'],
-            sels, prefix=prefix)
+            val['label-color'], val['label-description'], sels, actioner=actioner)
 
-    def _run_selectors(self, obj: Issue|PullRequest|Repository) -> list[dict]:
+    def _run_selectors(self, obj: Issue|PullRequest|Repository) -> list[list[dict]]:
         # overly-drawn-out code for logging purposes:
         selector_matches = []
         for selector in self._selectors:
@@ -140,7 +150,7 @@ class SelectorLabeler(BaseLabeler):
         return selector_matches
 
     def _get_labels_for_selector_matches(
-            self, selector_matches: list[dict]) -> list[LabelParams]:
+            self, selector_matches: list[list[dict]]) -> list[LabelParams]:
         if not self._selectors:
             # This is a static label and should be returned.
             return [LabelParams(
@@ -207,6 +217,13 @@ class SelectorLabeler(BaseLabeler):
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         return self._get_nonstatic_labels(issue)
 
+    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+        if not self._actioner:
+            return
+
+        selector_matches = self._run_selectors(obj)
+        self._actioner.run_post_action_for_matches(obj, selector_matches)
+
 
 class PrefixLabeler(BaseLabeler):
     """ Class for handling label prefix groups.
@@ -243,6 +260,9 @@ class PrefixLabeler(BaseLabeler):
         res = [slblr.get_labels_for_issue(issue) for slblr in self._sublabelers]
         return self._prefix_labels(list(itertools.chain(*res)))
 
+    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+        for sublabeler in self._sublabelers:
+            sublabeler.run_post_labelling_actions(obj)
 
 
 def load_labelers_from_config(config: dict) -> list[BaseLabeler]:
