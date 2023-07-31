@@ -181,7 +181,7 @@ class FilesSelector(Selector):
         # NOTE(aznashwan): Only Repositories/PRs have associated files.
         if not isinstance(obj, (Repository, PullRequest)):
             LOG.warn(
-                f"FileSelector got unsupported object type {type(obj)}: {obj}")
+                f"{self.__class__}.match() got unsupported object type {type(obj)}: {obj}")
             return []
 
         all_files = file_cache
@@ -197,6 +197,74 @@ class FilesSelector(Selector):
                 res.append(match)
 
         return res
+
+
+class LinesChangedSelector(Selector):
+
+    def __init__(
+            self, min: int|None=None, max: int|None=None,
+            change_type: str="total"):
+        if min is None and max is None:
+            raise ValueError(
+                f"{self.__class__}: at least one of min/max is required.")
+        self._min = min
+        self._max = max
+        supported_change_types = [
+            "additions", "deletions", "total", "net"]
+        if change_type not in supported_change_types:
+            raise ValueError(
+                f"Unsupported change type {change_type}. "
+                f"Must be one of: {supported_change_types}")
+        self._change_type = change_type
+
+    @classmethod
+    def from_dict(cls, val: dict):
+        supported_keys = ["min",  "max", "type"]
+        unsupported_keys = [k for k in val if k not in supported_keys]
+        if unsupported_keys:
+            raise ValueError(
+                f"{cls}.from_dict() got unsupported keys: {unsupported_keys}")
+        return cls(
+            min=val.get("min"), max=val.get("max"),
+            change_type=val.get("type", "total"))
+
+    def match(self, obj: Repository|PullRequest,
+              file_cache: list[str]=[]) -> list[dict]:
+        _ = file_cache
+
+        # NOTE(aznashwan): Only Repositories/PRs have associated files.
+        if not isinstance(obj, (PullRequest, Repository)):
+            LOG.warn(
+                f"{self.__class__}.match() got unsupported object type {type(obj)}: {obj}")
+            return []
+
+        res = {
+            "lines-changed-min":
+                self._min if self._min is not None else "-Inf",
+            "lines-changed-max":
+                self._max if self._max is not None else "+Inf"}
+        if isinstance(obj, Repository):
+            return [res]
+
+        changes = 0
+        match self._change_type:
+            case "total":
+                changes = obj.additions + obj.deletions
+            case "additions":
+                changes = obj.additions
+            case "deletions":
+                changes = obj.deletions
+            case "net":
+                changes = obj.additions - obj.deletions
+            case other:
+                raise ValueError(
+                    f"Got unsupported change totalling scheme: {other}")
+
+        if self._min is not None and changes < self._min:
+            return []
+        if self._max is not None and changes >= self._max:
+            return []
+        return [res]
 
 
 class FileLister():
@@ -231,6 +299,7 @@ class FileLister():
 SELECTORS_NAME_MAP = {
     "regex": RegexSelector,
     "files": FilesSelector,
+    "lines-changed": LinesChangedSelector,
 }
 
 

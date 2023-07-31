@@ -1,11 +1,10 @@
-# This defines a static label named 'example-label' with the given props.
+# This defines a static static label named 'example-label' with the given props.
 example-label:
-  # NOTE: 'label-color' and 'label-description' are always required.
   label-color: 0075ca  # blue
   label-description: This is a simple example static label.
 
 
-# This defines two "namespaced" static labels named: label-prefix/sublabel-{1,2}.
+# This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
 label-prefix:
   sublabel-1:
     label-color: 0075ca
@@ -15,7 +14,7 @@ label-prefix:
     label-description: This is a simple second sublabel.
 
 
-# This will define as many labels as there are file matches in the repo.
+# This will define as many labels as there are filepath regex matches.
 label-for-sample-file-{files-name-regex-group-1}:
   label-color: 0075ca
   # NOTE: "group-0" is the entire filepath.
@@ -53,12 +52,9 @@ bug:
       maintainer-comments-only: false
 
 
-# This will allow project maintainers to automatically generate and
-# set labels on Issues/PRs by commenting '/label-me-as $LABEL':
 manual-{regex-comments-group-2}:
   label-color: d73a4a
-  label-description: |
-    "This label was defined through a maintainer comment with: {regex-comments-group-1}"
+  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
   selectors:
     regex:
       maintainer-comments-only: true
@@ -74,7 +70,8 @@ pr-size-measure:
       This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
     selectors:
       lines-changed:
-        min: 0
+        type: net # Can be: additions/deletions/total/net (net = additions - deletions)
+        min: 1
         max: 1000
 
   large:
@@ -85,4 +82,19 @@ pr-size-measure:
       lines-changed:
         min: 1000
         # NOTE: setting max to zero will remove any upper bound.
-        max: 0
+        max: 10000
+
+  too-big:
+    label-color: d73a4a
+    label-description: |
+      This PR has more than {lines-changed-min} lines and must be broken down into smaller PRs.
+    action:
+      close:
+        # Will only trigger for PRs larger than 10k lines.
+        on: "{lines-changed-min}"
+        with-comment: |
+          Thank you for your contribution, but this PR is too large to be reviewed efficiently.
+          Please break down the changes into individual PRs no larger than {lines-changed-min} lines.
+    selectors:
+      lines-changed:
+        min: 10000
