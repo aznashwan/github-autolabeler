@@ -29,6 +29,12 @@ jobs:
       - name: Checkout.
         uses: actions/checkout@v3
 
+      # HACK(aznashwan): print env context.
+      - env:
+          EVENT_CONTEXT: ${{ toJSON(github.event) }}
+        run: |
+          echo $EVENT_CONTEXT
+
       - name: "Run autolabelling."
         run: |
           TARGET="${{ github.repository }}"
