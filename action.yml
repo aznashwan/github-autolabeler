@@ -34,8 +34,8 @@ runs:
     - ${{ inputs.token }}
     - --label-definitions-file
     - ${{ inputs.config_file_path }}
-    - ${{ inputs.command }}
     - ${{ inputs.target }}
+    - ${{ inputs.command }}
 
 branding:
   icon: 'bookmark'

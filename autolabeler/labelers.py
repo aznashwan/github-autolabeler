@@ -164,7 +164,8 @@ class SelectorLabeler(BaseLabeler):
                 except Exception as ex:
                     msg = (
                         f"Failed to format match data into '{self._name}' and "
-                        f"'{self._description}'. Selector match value were: {match}")
+                        f"'{self._description}'. Selector match value were: "
+                        f"{match}: {ex}")
                     LOG.error(msg)
                     continue
 
@@ -183,9 +184,10 @@ class SelectorLabeler(BaseLabeler):
         # If this a simple label with a static name, it always applies to the repo.
         try:
             self._name.format()
+            self._description.format()
             return [LabelParams(self._name, self._color, self._description)]
         except KeyError:
-            # Else, we must run an generate the selector:
+            # Else, we must run and generate the selectors:
             return self._get_labels_for_selector_matches(
                 self._run_selectors(repo))
 
