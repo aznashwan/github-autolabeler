@@ -53,6 +53,10 @@ def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "-l", "--label-definitions-file", type=argparse.FileType('r'),
         help="String path to a JSON/YAML file containing label definitions.")
+    parser.add_argument(
+        "-a", "--run-post-labelling-actions", action='store_true', default=False,
+        help="Whether or not to run any post-labelling actions as denoted by the "
+             "'action:' clauses defined on labels.")
     # parser.add_argument(
     #     "-r", "--replies-definitions-file", type=argparse.FileType('r'),
     #     help="String path to a JSON/YAML file containing issue/PR autoreply "
@@ -100,6 +104,8 @@ def main():
             labels = label_manager.generate_labels()
         case "sync":
             labels = label_manager.sync_labels()
+            if args.run_post_labelling_actions:
+                label_manager.run_post_labelling_actions()
         case "purge":
             raise NotImplementedError("no purging yet")
         case other:
