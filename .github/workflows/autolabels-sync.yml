@@ -41,5 +41,6 @@ jobs:
           github-autolabeler \
             --github-token ${{ secrets.GITHUB_TOKEN }} \
             --label-definitions-file "autolabels.yml" \
+            --run-post-labelling-actions \
             "$TARGET" \
             sync
