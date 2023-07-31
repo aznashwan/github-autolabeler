@@ -88,6 +88,12 @@ class OnMatchFormatAction(BasePostLabellingAction):
 
     def run_post_action_for_matches(
             self, obj: ActionableObject, match_sets: list[list[dict]]):
+        if not isinstance(obj, ActionableObject):
+            LOG.warn(
+                f"{self}.run_post_action_for_matches() called on non-actionable "
+                f"object {obj} ({type(obj)})")
+            return
+
         triggers = []
         for match_set in match_sets:
             for match in match_set:
