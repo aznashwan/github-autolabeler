@@ -92,10 +92,10 @@ pr-size-measure:
         # NOTE: omitting 'max/min' will set the bounds to +/- Infinity respectively.
         min: 10000
     action:
-      close:
-        # Will only trigger for PRs larger than 10k lines.
-        on: "{lines-changed-min}"
-        with-comment: |
-          Thank you for your contribution, but this PR is too large to be reviewed effectively.
-          Please break down the changes into individual PRs no larger than {lines-changed-min} lines.
-
+      # Will only trigger on PRs if the 'lines-changed' selector returns a match.
+      if: "{lines-changed-min}"
+      perform: close
+      # NOTE: can include markdown directives in reply comment.
+      comment: |
+        Thank you for your contribution, but this PR is *too large to be reviewed effectively*. :disappointed:
+        Please break down the changes into individual PRs no larger than {lines-changed-min} lines.

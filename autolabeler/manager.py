@@ -104,6 +104,11 @@ class LabelsManager():
         self._labelling_target.set_labels(labels)
         return labels
 
+    def run_post_labelling_actions(self):
+        for labeler in self._labelers:
+            labeler.run_post_labelling_actions(
+                self._labelling_target.get_target_handle())  # pyright: ignore
+
     def remove_undefined(self):
         """ Deletes all labels which are not defined in the config from the target. """
         existing_labels = self._labelling_target.get_labels()
