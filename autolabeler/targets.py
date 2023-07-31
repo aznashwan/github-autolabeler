@@ -150,6 +150,12 @@ class ObjectLabellingTarget(BaseLabelsTarget):
             case "issue" | "issues":
                 if self._item_id:
                     target = repo.get_issue(self._item_id)
+                    if target.pull_request:
+                        LOG.warn(
+                            f"Provided target {self._get_target_resource_path()} is "
+                            f"is actually a Pull Request. Treating as such.")
+                        self._item_type = "pull"
+                        target = target.as_pull_request()
                 else:
                     return NotImplemented
             case "pull" | "pulls":

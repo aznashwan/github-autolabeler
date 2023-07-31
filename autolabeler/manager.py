@@ -12,9 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from github import Github
-from autolabeler import labelers
 
+from github import Github
+from github.Issue import Issue
+from github.PullRequest import PullRequest
+
+
+from autolabeler import labelers
 from autolabeler.labelers import LabelParams
 from autolabeler import targets
 from autolabeler import utils
@@ -43,7 +47,6 @@ class LabelsManager():
         self._labelers_config = labelers_config
         self._labelers = labelers.load_labelers_from_config(labelers_config)
 
-        self._target_object = None
         # HACK(aznashwan): find better way to call appropriate labelling func.
         self._labelling_operation = None
 
@@ -74,15 +77,22 @@ class LabelsManager():
         match target_type:
             case None | "":
                 self._labelling_operation = lambda l, t: l.get_labels_for_repo(t)
-            # NOTE: special concession to accept 'pulls/issues' as plurals as well.
-            case 'issue' | 'issues':
+            case 'issue' | 'pull':
+                # NOTE(aznashwan): `ObjectLabellingTarget` can handle both
+                # issues and PRs transparently:
                 self._labelling_target = targets.ObjectLabellingTarget(
                     client, user, repo, target_type, target_id)
-                self._labelling_operation = lambda l, t: l.get_labels_for_issue(t)
-            case 'pull' | 'pulls':
-                self._labelling_target = targets.ObjectLabellingTarget(
-                    client, user, repo, target_type, target_id)
-                self._labelling_operation = lambda l, t: l.get_labels_for_pr(t)
+                target = self._labelling_target.get_target_handle()
+                if isinstance(target, PullRequest):
+                    self._labelling_operation = lambda l, t: l.get_labels_for_pr(t)
+                elif isinstance(target, Issue):
+                    self._labelling_operation = lambda l, t: l.get_labels_for_issue(t)
+                else:
+                    raise ValueError(
+                        f"Unsupported target handle: {target} ({type(target)})")
+            case 'issues' | 'pulls':
+                raise NotImplementedError(
+                    "Multi issue/PR currently unsupported.")
             case other:
                 accepted = ['pull(s)', 'issue(s)']
                 raise ValueError(
