@@ -239,9 +239,9 @@ class LinesChangedSelector(Selector):
             return []
 
         res = {
-            "lines-changed-min":
+            "diff-min":
                 self._min if self._min is not None else "-Inf",
-            "lines-changed-max":
+            "diff-max":
                 self._max if self._max is not None else "+Inf"}
         if isinstance(obj, Repository):
             return [res]
@@ -299,7 +299,7 @@ class FileLister():
 SELECTORS_NAME_MAP = {
     "regex": RegexSelector,
     "files": FilesSelector,
-    "lines-changed": LinesChangedSelector,
+    "diff": LinesChangedSelector,
 }
 
 

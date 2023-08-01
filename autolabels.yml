@@ -67,9 +67,9 @@ pr-size-measure:
   small:
     label-color: 0075ca
     label-description: |
-      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+      This PR is between {diff-min} and {diff-max} lines of code.
     selectors:
-      lines-changed:
+      diff:
         type: net # Can be: additions/deletions/total/net (net = additions - deletions)
         min: 1
         max: 1000
@@ -77,25 +77,28 @@ pr-size-measure:
   large:
     label-color: d73a4a
     label-description: |
-      This PR is between {lines-changed-min} and {lines-changed-max} lines of code.
+      This PR is between {diff-min} and {diff-max} lines of code.
     selectors:
-      lines-changed:
+      diff:
         min: 1000
         max: 10000
 
   too-big:
     label-color: d73a4a
     label-description: |
-      This PR has more than {lines-changed-min} lines and must be broken down into smaller PRs.
+      This PR has more than {diff-min} lines and must be broken down into smaller PRs.
     selectors:
-      lines-changed:
+      diff:
         # NOTE: omitting 'max/min' will set the bounds to +/- Infinity respectively.
         min: 10000
     action:
-      # Will only trigger on PRs if the 'lines-changed' selector returns a match.
-      if: "{lines-changed-min}"
+      # Will only trigger on PRs if the 'diff' selector returns a match.
+      if: "{diff-min}"
       perform: close
       # NOTE: can include markdown directives in reply comment.
       comment: |
-        Thank you for your contribution, but this PR is *too large to be reviewed effectively*. :disappointed:
-        Please break down the changes into individual PRs no larger than {lines-changed-min} lines.
+        Thank you for your contribution to our project! :smile:
+
+        Unfortunately, this PR is *too large to be reviewed effectively*. :disappointed:
+
+        Please break down the changes into individual PRs no larger than {diff-min} lines.
