@@ -24,7 +24,7 @@ The autolabeler's main design goals were providing:
     - [Basic Config](#basic-config)
     - [Direct Execution](#direct-execution)
     - [GitHub Actions](#github-actions)
-- [Configuration](#config)
+- [Configuration](#configuration)
     - [Basic Labelers](#basic-labelers)
     - [Selectors](#selectors)
         - [Files Selector](#files-selector)
@@ -235,3 +235,164 @@ jobs:
             "$TARGET" \
             sync
 ```
+
+## Configuration
+
+### Basic labelers
+
+The autolabeler has a simple YAML-based configuration syntax which is composed
+from the following constructs:
+
+1. Label names as string keys to the definitions of so-called `labelers`.
+2. Labeler properties:
+    - `label-color`: 6-hex-digit color for the label.
+    - `label-description`: String description of the label.
+    - `selectors`: A mapping of pre-defined selectors which match against
+                   repository files, Issue/PR titles/descriptions/properties,
+                   and more. The matches of the selectors can be used in both
+                   the label's name, as well as the `label-description`.
+    - `action`: An action to take based on one or more `selector` matches.
+
+```yaml
+# This will auto-generate a label named 'my-prefix/label-for-XYZ'
+# depending on selector matches.
+my-prefix:
+  # NOTE: selector results can be referenced in label names too
+  # in this format: "{$SELECTOR_NAME-$SELECTOR_FIELD-$SELECTOR_RESULT}"
+  label-for-{selector-1-option-1-result-1}:
+    label-color: 0e8a16  # green
+    label-description: |
+        This is an arbitrary label description string. It can also
+        reference selector matches like: {selector-1-option-1-result-1}
+    selector:
+      selector-1:
+        # NOTE: the "result-N" part depends on the selector's implementation.
+        option-1: "<some property to match as 'selector-1-option-1-result-N'>"
+      selector-2:
+        option-2: "<some property to match as 'selector-2-option-2-result-N'>"
+    action:
+      # You can reference as many selectors as you need to decide
+      # whether to apply the label and execute an action or not:
+      if: "{selector-1-option-1-result-1} {selector-2-option-2-result-2}"
+      perform: close
+      comment: This PR/Issue will be closed now.
+```
+
+<table>
+<tr>
+<td> Definition </td> <td> Description </td> <td> Applied on </td>
+</tr>
+
+<tr>
+<td>
+
+```yaml
+example-static-label:
+  label-color: 0e8a16  # green
+  label-description: Description.
+```
+
+</td>
+<td>
+
+Defines a *static label* named `example-static-label`.
+
+</td>
+<td>
+
+Will get created and managed on Repositories.
+Needs to be manually set by users on PRs/Issues.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+```yaml
+example-prefix:
+  example-sublabel-1:
+    label-color: 0e8a16  # green
+    label-description: Description 1.
+  example-sublabel-1:
+    label-color: e4e669  # yellow
+    label-description: Description 2.
+```
+
+</td>
+<td>
+
+Defines *two prefixed static labels* named `example-prefix/example-sublabel-{1,2}`.
+
+</td>
+<td>
+
+Will get created and managed on Repositories.
+Need to be manually set by users on PRs/Issues.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+```yaml
+example-selector-{selector-1-option-1-result-1}:
+  label-color: 0e8a16  # green
+  label-description: Description 1.
+  selector:
+    selector-1:
+      option-1: "<some match param>"
+```
+
+</td>
+<td>
+
+Defines a *new label for every selector match* with the given format.
+
+</td>
+<td>
+
+Will get created and managed on Repositories IF the selector matches repos.
+Will get automatically created and set on Issues/PRs IF the selector matches
+Issues/PRs.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+```yaml
+example-action-label:
+  label-color: 0e8a16  # green
+  label-description: Description 1.
+  selector:
+    selector-1:
+      option-1: "<some match param>"
+  action:
+      if: "{selector-1-option-1-result-1}"
+      perform: close
+      comment: This PR/Issue will be closed now.
+```
+
+</td>
+<td>
+
+Defines a *new label for every selector match*.
+
+</td>
+<td>
+
+Will get created and managed on Repositories IF the selector matches repos.
+Will get automatically created and set on Issues/PRs IF the selector matches
+Issues/PRs.
+Will close PRs/Issues IF the selector returns any matches.
+
+</td>
+</tr>
+</table>
+
+### Selectors
+
+Selectors are what determine whether a label will get applied or not.
