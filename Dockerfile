@@ -1,4 +1,4 @@
-FROM python:latest
+FROM python:3-alpine
 
 ENV GITHUB_TOKEN=""
 
