@@ -38,14 +38,14 @@ The autolabeler's main design goals were providing:
 ## Prerequisites
 
 Whether used from the CLI directly by an end user, or integrated as a step
-within the a repository's usual GitHub workflows, the utility will require a
-[GitHub API Access Token](
+within the a repository's usual GitHub Action workflows, the utility will require
+a [GitHub API Access Token](
 https://docs.github.com/en/rest/guides/getting-started-with-the-rest-api?apiVersion=2022-11-28#about-tokens)
 to perform the querying/labelling/commenting/closing operations it will be making.
 
 ### Personal Access Token Setup
 
-If intending to run the utility directly and have it impersonate or GitHub user in
+If intending to run the utility directly and having it impersonate our GitHub user in
 its automatic labelling or reply actions, we'll need to create a
 [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 
@@ -53,7 +53,7 @@ It is recommended to [create a Fine-Grained Access Token](
 https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
 with the following permissions:
 
-* Repository Permissions:
+Repository Permissions:
     - Contents: Read-only (used for reading main Repo labels and files)
     - Issues: Read and write (used to read, label, comment, and close issues)
     - Pull Requests: Read and write (used to read, label, comment, and close PRs)
@@ -243,8 +243,9 @@ jobs:
 The autolabeler has a simple YAML-based configuration syntax which is composed
 from the following constructs:
 
-1. Label names as string keys to the definitions of so-called `labelers`.
-2. Labeler properties:
+Label names are string keys which map to the definitions of so-called `labelers`.
+
+Labeler properties include:
     - `label-color`: 6-hex-digit color for the label.
     - `label-description`: String description of the label.
     - `selectors`: A mapping of pre-defined selectors which match against
@@ -322,7 +323,7 @@ example-prefix:
 </td>
 <td>
 
-Defines *two prefixed static labels* named `example-prefix/example-sublabel-{1,2}`.
+Defines *two namespaced static labels* named `example-prefix/example-sublabel-{1,2}`.
 
 </td>
 <td>
@@ -379,7 +380,8 @@ example-action-label:
 </td>
 <td>
 
-Defines a *new label for every selector match*.
+Defines a static label that will get applied to PRs/Issue and close them
+IF the selector matches.
 
 </td>
 <td>
@@ -396,3 +398,130 @@ Will close PRs/Issues IF the selector returns any matches.
 ### Selectors
 
 Selectors are what determine whether a label will get applied or not.
+
+Please see the [Basic Labelers](#basic-labelers) section on how to use
+selectors within your labelers.
+
+#### Files Selector
+
+A selector for matching files with the Repo/PR.
+
+```yaml
+unique-label-for-{files-name-regex-group-0}:
+  label-color: e4e669  # yellow
+  label-description: |
+      This label was created especially for the file whose repo path is:
+      {files-name-regex-group-0}
+  selector:
+    files:
+      name-regex: "(.*).txt"
+```
+
+Params:
+    - `name-regex`: regular expression to match against the full filepaths
+                    of all files within the Repository/Pull Request.
+
+Result keys:
+    - `files-name-regex-group-0`: the whole filepath, relative to the repo root,
+                                  which matched
+    - `files-name-regex-group-N`: capture group number N-1 (since `0` is always
+                                  the whole match)
+
+#### Comments Selector
+
+A selector for matching regexes within comment strings in Issues/PRs.
+
+```yaml
+bug:
+  label-color: d73a4a  # red
+  label-description: This label was defined by a comment.
+  selectors:
+    regex:
+      case-insensitive: true  # default is false
+
+      # This will make the label be applied to PRs/Issues whose titles/descriptions
+      # match the given regex. (in this case, some simple keywords)
+      title: "(issue|bug|fix|problem|failure|error)"
+      description: "(issue|bug|problem|failure|error)"
+
+      # This will also make the label be applied to PRs/Issues where a maintainer
+      # comments the given magic string on a single line within a comment.
+      comments: "^(/label-me-as bug)$"
+      maintainer-comments-only: true  # default is true anyway
+```
+
+Result keys:
+    - `regex-title-group-N`: capture groups for the title Regex. (0 = whole title)
+    - `regex-description-group-N`: capture groups for the description Regex. (0 = whole title)
+    - `regex-comments-group-N`: capture groups for the title Regex. (0 = whole title)
+    - `regex-comments-maintainer`: present only if the latest comment was from
+                                   a maintainer.
+
+#### Diff Selector
+
+A selector for matching diff sizes for PRs.
+
+```yaml
+pr-size-measure:
+  small:
+    label-color: 0075ca
+    label-description: This PR is between {diff-min} and {diff-max} lines of code.
+    selectors:
+      diff:
+        # Can be: additions/deletions/total/net (net = additions - deletions)
+        type: net
+        min: 1
+        max: 1000
+
+  large:
+    label-color: d73a4a
+    label-description: This PR is over {diff-min} lines of code.
+    selectors:
+      diff:
+        # NOTE: omitting either the min/max will set them to -/+ Infinity.
+        min: 1000
+```
+
+Result keys:
+    - `diff-min`: the 'min' setting on the diff selector.
+    - `diff-max`: the 'max' setting on the diff selector.
+    - `diff-total`: the total diff size (additions + deletions)
+    - `diff-addition`: the number of added lines.
+    - `diff-deletions`: the number of deleted lines.
+    - `diff-net`: the net diff (additions - deletions)
+
+### Actions
+
+[Labelers](#basic-labelers) can declare a singular `action` to be executed based
+on whether one or more [selectors](#selectors) have fired or not.
+
+#### Closing Action
+
+The Closing action can close/reopen an Issue/PR based on one or more selectors
+firing.
+
+```yaml
+one-liner-only-file:
+    label-color: d73a4a  # red
+    label-description: |
+        This file can only ever have PRs created which are at most {diff-min} LoC:
+        {files-name-regex-group-0}
+    selectors:
+        files:
+            # will match this exact path:
+            name-regex: "path/to/untouchable/file.txt"
+        diff:
+            # will match any diff greater than 1 line of code.
+            min: 1
+    action:
+        if: "{files-name-regex-group-0}"
+        perform: close
+        comment: |
+            Unfortunately, we do not currently accept any major contributions to
+            the file: {files-name-regex-group-0}
+            Please only change the file {diff-min} lines at a time.
+```
+
+## Advanced Usage
+
+Please review the `./samples` folder for more advanced config examples.

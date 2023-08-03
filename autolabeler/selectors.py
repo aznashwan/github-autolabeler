@@ -67,7 +67,7 @@ class RegexSelector(Selector):
     def from_dict(cls, val: dict) -> Self:
         """ Supports dict with following keys:
 
-        case_insensitive: bool,
+        case-insensitive: bool,
         title: "<regex for title>",
         description: "<regex for description>",
         comments: "<regex for comments>",
@@ -264,6 +264,13 @@ class LinesChangedSelector(Selector):
             return []
         if self._max is not None and changes >= self._max:
             return []
+
+        res.update({
+            "diff-total": obj.additions + obj.deletions,
+            "diff-additions": obj.additions,
+            "diff-deletions": obj.deletions,
+            "diff-net": obj.additions - obj.deletions})
+
         return [res]
 
 
