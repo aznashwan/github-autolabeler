@@ -26,7 +26,7 @@ jobs:
     container: ghcr.io/aznashwan/github-autolabeler:main
 
     steps:
-      - name: Checkout.
+      - name: Checkout
         uses: actions/checkout@v3
 
       # HACK(aznashwan): print env context.
@@ -35,7 +35,7 @@ jobs:
         run: |
           echo $EVENT_CONTEXT
 
-      - name: "Run autolabelling."
+      - name: "Run autolabelling"
         run: |
           TARGET="${{ github.repository }}"
           if [ "${{ github.event.pull_request.number }}" ]; then

@@ -216,10 +216,10 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/cloudbase/gh-auto-labeler:main
     steps:
-      - name: Checkout.
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: "Run autolabelling."
+      - name: "Run autolabelling"
         run: |
           TARGET="${{ github.repository }}"
           if [ "${{ github.event.pull_request.number }}" ]; then
