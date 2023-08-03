@@ -221,6 +221,10 @@ jobs:
 
       - name: "Run autolabelling"
         run: |
+          # This will check whether this action was triggered by a PR/Issue
+          # event and update the target string accordingly.
+          # If your `on:` section only triggers on certain types of resources,
+          # you can safely hardcode the exact target format directly.
           TARGET="${{ github.repository }}"
           if [ "${{ github.event.pull_request.number }}" ]; then
             TARGET="$TARGET/pull/${{ github.event.pull_request.number }}"
@@ -246,13 +250,13 @@ from the following constructs:
 Label names are string keys which map to the definitions of so-called `labelers`.
 
 Labeler properties include:
-    - `label-color`: 6-hex-digit color for the label.
-    - `label-description`: String description of the label.
-    - `selectors`: A mapping of pre-defined selectors which match against
+    * `label-color`: 6-hex-digit color for the label.
+    * `label-description`: String description of the label.
+    * `selectors`: A mapping of pre-defined selectors which match against
                    repository files, Issue/PR titles/descriptions/properties,
                    and more. The matches of the selectors can be used in both
                    the label's name, as well as the `label-description`.
-    - `action`: An action to take based on one or more `selector` matches.
+    * `action`: An action to take based on one or more `selector` matches.
 
 ```yaml
 # This will auto-generate a label named 'my-prefix/label-for-XYZ'
@@ -418,14 +422,14 @@ unique-label-for-{files-name-regex-group-0}:
 ```
 
 Params:
-    - `name-regex`: regular expression to match against the full filepaths
-                    of all files within the Repository/Pull Request.
+* `name-regex`: regular expression to match against the full filepaths
+                of all files within the Repository/Pull Request.
 
 Result keys:
-    - `files-name-regex-group-0`: the whole filepath, relative to the repo root,
-                                  which matched
-    - `files-name-regex-group-N`: capture group number N-1 (since `0` is always
-                                  the whole match)
+* `files-name-regex-group-0`: the whole filepath, relative to the repo root,
+                              which matched
+* `files-name-regex-group-N`: capture group number N-1 (since `0` is always
+                              the whole match)
 
 #### Comments Selector
 
@@ -451,11 +455,11 @@ bug:
 ```
 
 Result keys:
-    - `regex-title-group-N`: capture groups for the title Regex. (0 = whole title)
-    - `regex-description-group-N`: capture groups for the description Regex. (0 = whole title)
-    - `regex-comments-group-N`: capture groups for the title Regex. (0 = whole title)
-    - `regex-comments-maintainer`: present only if the latest comment was from
-                                   a maintainer.
+* `regex-title-group-N`: capture groups for the title Regex. (0 = whole title)
+* `regex-description-group-N`: capture groups for the description Regex. (0 = whole descr)
+* `regex-comments-group-N`: capture groups for the title Regex. (0 = whole comment)
+* `regex-comments-maintainer`: present only if the latest comment was from
+                               a maintainer.
 
 #### Diff Selector
 
@@ -483,12 +487,12 @@ pr-size-measure:
 ```
 
 Result keys:
-    - `diff-min`: the 'min' setting on the diff selector.
-    - `diff-max`: the 'max' setting on the diff selector.
-    - `diff-total`: the total diff size (additions + deletions)
-    - `diff-addition`: the number of added lines.
-    - `diff-deletions`: the number of deleted lines.
-    - `diff-net`: the net diff (additions - deletions)
+* `diff-min`: the 'min' setting on the diff selector.
+* `diff-max`: the 'max' setting on the diff selector.
+* `diff-total`: the total diff size (additions + deletions)
+* `diff-addition`: the number of added lines.
+* `diff-deletions`: the number of deleted lines.
+* `diff-net`: the net diff (additions - deletions)
 
 ### Actions
 
