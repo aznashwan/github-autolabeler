@@ -43,7 +43,7 @@ outputs:
 runs:
   using: 'docker'
   # NOTE: Dockerfile's entrypoint automatically sources all inputs from env.
-  image: 'Dockerfile'
+  image: 'docker://ghcr.io/aznashwan/github-autolabeler:main'
 
 branding:
   icon: 'bookmark'
