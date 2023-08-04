@@ -244,6 +244,7 @@ class LinesChangedSelector(Selector):
             "diff-max":
                 self._max if self._max is not None else "+Inf"}
         if isinstance(obj, Repository):
+            # TODO(aznashwan): ideally pre-define the labels on repos here.
             return [res]
 
         changes = 0

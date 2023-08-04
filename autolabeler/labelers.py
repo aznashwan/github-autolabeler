@@ -174,7 +174,7 @@ class SelectorLabeler(BaseLabeler):
                 except Exception as ex:
                     msg = (
                         f"Failed to format match data into '{self._name}' and "
-                        f"'{self._description}'. Selector match value were: "
+                        f"'{self._description}'. Selector match values were: "
                         f"{match}: {ex}")
                     LOG.error(msg)
                     continue
