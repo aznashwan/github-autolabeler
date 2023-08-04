@@ -1,7 +1,15 @@
 name: 'Cloudbase Autolabeller'
-description: 'One-stop solution for managing all your labels with a crystal-clear config.'
+description: |
+  One-stop solution for managing all your labels with a crystal-clear config.
+author: Cloudbase Solutions Srl (@cloudbase)
+
 
 inputs:
+  token:
+    description: |
+      GitHub token to use for the labelling actions. ('${ secrets.GITHUB_TOKEN }')
+      Can be a 'classic' token or a 'fine-grained' token with full repo/issue/PR access.
+    default: ${{ github.token }}
   target:  # id of input
     description: |
       Target for the labelling action.
@@ -9,33 +17,33 @@ inputs:
         - myuser/myrepo
         - muyser/myrepo/pull/N
         - myuser/myrepo/issues/N
-    required: true
+    required: false
+  target-from-action-env:
+    description: |
+      The '${ toJSON(github) }' variable present in GitHub actions to extract the target.
+      Runs triggered on the repo will result in the labelling of the whole repo.
+      Runs triggered on PRs/Issues will only result in the labelling of said item.
+    required: false
   command:
     description: |
       The labelling command to run. Options are 'generate', 'sync', and 'purge'.
-  config_file_path:
+    default: sync
+  config-path:
     description: |
-      Path to the labels configuration file.
-  token:
-    description: |
-      GitHub token to use for the labelling actions.
-      Can be a 'classic' token or a 'fine-grained' token with full repo/issue/PR access.
+      Path to the labels configuration file within your repository.
+      Default is '.github/autolabels.yml'
+    default: .github/autolabels.yml
 
 outputs:
   # Can be referenced using ${{ action_id.outputs.labels }}
   labels:
-    description: 'JSON listing the label definitions which were added/modified.'
+    description: |
+      JSON listing the label definitions which were added/modified for the given target.
 
 runs:
   using: 'docker'
+  # NOTE: Dockerfile's entrypoint automatically sources all inputs from env.
   image: 'Dockerfile'
-  args:
-    - --github-token
-    - ${{ inputs.token }}
-    - --label-definitions-file
-    - ${{ inputs.config_file_path }}
-    - ${{ inputs.target }}
-    - ${{ inputs.command }}
 
 branding:
   icon: 'bookmark'

@@ -7,4 +7,4 @@ COPY . .
 
 RUN pip3 install --no-cache-dir ./
 
-ENTRYPOINT github-autolabeler
+ENTRYPOINT ["python3", "entrypoint.py"]

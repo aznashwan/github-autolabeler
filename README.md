@@ -198,7 +198,7 @@ on:
   push:                                 # triggers on pushes to repo branches
     branches: [main]                    # triggers on pushes to 'main'
     tags: ['v*.*.*']                    # triggers on certain tags
-  issue:                                # triggers on issue-related operations
+  issues:                               # triggers on issue-related operations
     types: [opened, edited, closed]     # C_UD operations on the issue
   pull_request:                         # triggers on PR-related operations
     branches: [main]                    # PRs must have been opened against 'main'

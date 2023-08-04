@@ -15,6 +15,7 @@
 import argparse
 import json
 import os
+import sys
 from io import IOBase
 
 import github
@@ -72,7 +73,7 @@ def load_yaml_file(path_or_file: str|IOBase) -> dict:
     return yaml.safe_load(file)
 
 
-def main():
+def main_with_args(argv: list[str]):
     parser = argparse.ArgumentParser(
         "github-autolabeler",
         description="Python 3 utility for automatically labelling/triaging "
@@ -80,7 +81,7 @@ def main():
 
     parser = _add_arguments(parser)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.github_token:
         raise ValueError(
@@ -113,3 +114,7 @@ def main():
 
     labels_dicts = [l.to_dict() for l in labels]
     print(json.dumps(labels_dicts, indent=4))
+
+
+def main():
+    main_with_args(sys.argv[1:])

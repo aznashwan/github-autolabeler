@@ -32,4 +32,4 @@ build-backend = "setuptools.build_meta"
 include = ["autolabeler"]
 
 [project.scripts]
-github-autolabeler = "autolabeler.main:main"
+gh-auto-labeler = "autolabeler.main:main"

@@ -6,8 +6,6 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
-  # NOTE: required to pull GCR Docker image if fork is private.
-  packages: read
 
 on:
   workflow_dispatch:
@@ -29,12 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      # HACK(aznashwan): print env context.
-      - env:
-          EVENT_CONTEXT: ${{ toJSON(github.event) }}
-        run: |
-          echo $EVENT_CONTEXT
-
       - name: "Run autolabelling"
         run: |
           TARGET="${{ github.repository }}"
@@ -44,7 +36,7 @@ jobs:
             TARGET="$TARGET/issue/${{ github.event.issue.number }}"
           fi
 
-          github-autolabeler \
+          gh-auto-labeler \
             --github-token ${{ secrets.GITHUB_TOKEN }} \
             --label-definitions-file "autolabels.yml" \
             --run-post-labelling-actions \
