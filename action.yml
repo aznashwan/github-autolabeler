@@ -10,7 +10,7 @@ inputs:
       GitHub token to use for the labelling actions. ('${ secrets.GITHUB_TOKEN }')
       Can be a 'classic' token or a 'fine-grained' token with full repo/issue/PR access.
     default: ${{ github.token }}
-  target:  # id of input
+  target:
     description: |
       Target for the labelling action.
       Can be the full URL or resource path of the repo or repo object, such as:

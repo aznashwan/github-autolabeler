@@ -73,7 +73,7 @@ def load_yaml_file(path_or_file: str|IOBase) -> dict:
     return yaml.safe_load(file)
 
 
-def main_with_args(argv: list[str]):
+def main_with_args(argv: list[str]) -> list[dict]:
     parser = argparse.ArgumentParser(
         "github-autolabeler",
         description="Python 3 utility for automatically labelling/triaging "
@@ -113,8 +113,9 @@ def main_with_args(argv: list[str]):
             raise ValueError(f"Unsupported command: {other}")
 
     labels_dicts = [l.to_dict() for l in labels]
-    print(json.dumps(labels_dicts, indent=4))
+    return labels_dicts
 
 
 def main():
-    main_with_args(sys.argv[1:])
+    labels_dicts = main_with_args(sys.argv[1:])
+    print(json.dumps(labels_dicts, indent=4))

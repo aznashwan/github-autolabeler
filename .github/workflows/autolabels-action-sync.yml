@@ -28,9 +28,12 @@ jobs:
         uses: actions/checkout@v3
 
       - name: "Run autolabelling"
+        id: autolabelling
         uses: aznashwan/github-autolabeler@main
         with:
-          token: ${{ github.token }}
           config-path: "./autolabels.yml"
           target-from-action-env: ${{ toJSON(github) }}
           command: sync
+
+      - name: "Echo labels"
+        run: echo "${{ steps.autolabelling.labels }}"

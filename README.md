@@ -181,7 +181,7 @@ $ docker run -v /tmp:/tmp -e GITHUB_TOKEN="<your token>" \
     generate
 
 # You can review the list of available arguments using:
-$ docker run ghcr.io/cloudbase/gh-auto-labeler:latest help
+$ docker run ghcr.io/cloudbase/gh-auto-labeler:main help
 ```
 
 ### GitHub Actions
@@ -214,30 +214,17 @@ permissions:
 jobs:
   autolabel:
     runs-on: ubuntu-latest
-    container: ghcr.io/cloudbase/gh-auto-labeler:main
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
       - name: "Run autolabelling"
-        run: |
-          # This will check whether this action was triggered by a PR/Issue
-          # event and update the target string accordingly.
-          # If your `on:` section only triggers on certain types of resources,
-          # you can safely hardcode the exact target format directly.
-          TARGET="${{ github.repository }}"
-          if [ "${{ github.event.pull_request.number }}" ]; then
-            TARGET="$TARGET/pull/${{ github.event.pull_request.number }}"
-          elif [ "${{ github.event.issue.number }}" ]; then
-            TARGET="$TARGET/issue/${{ github.event.issue.number }}"
-          fi
-
-          gh-auto-labeler \
-            --github-token ${{ secrets.GITHUB_TOKEN }} \
-            --label-definitions-file "path/to/your/repos/autolabels.yml" \
-            --run-post-labelling-actions \
-            "$TARGET" \
-            sync
+        uses: cloudbase/gh-auto-labeler@main
+        with:
+          target-from-action-env: ${{ toJSON(github) }}
+          # default is ".github/autolabels.yml"
+          config-path: "./autolabels.yml"
+          command: sync
 ```
 
 ## Configuration
@@ -528,4 +515,65 @@ one-liner-only-file:
 
 ## Advanced Usage
 
+### Advanced configs
+
 Please review the `./samples` folder for more advanced config examples.
+
+### Advanced actions setup
+
+#### Using autolabeler container directly from actions.
+
+```yaml
+# Workflow definition for automatically labelling on various triggers.
+name: Autolabeler Sync
+description: Workflow definition for automatically labelling on various triggers.
+
+on:
+  workflow_dispatch:                    # manual triggers from Actions menu
+  push:                                 # triggers on pushes to repo branches
+    branches: [main]                    # triggers on pushes to 'main'
+    tags: ['v*.*.*']                    # triggers on certain tags
+  issues:                               # triggers on issue-related operations
+    types: [opened, edited, closed]     # C_UD operations on the issue
+  pull_request:                         # triggers on PR-related operations
+    branches: [main]                    # PRs must have been opened against 'main'
+    types: [opened, edited, reopened]   # triggers on PRs being (re)opened/edited
+  issue_comment:                        # triggers on *both* PR/issue comments
+    types: [created, edited, deleted]   # C_UD operations on any comments
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  autolabel-through-container:
+
+    runs-on: ubuntu-latest
+    # NOTE: replace 'main' with any specific tag you'd need.
+    container: ghcr.io/cloudbase/gh-auto-labeler:main
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: "Run autolabelling"
+        run: |
+          # This will check whether this action was triggered by a PR/Issue
+          # event and update the target string accordingly.
+          # If your `on:` section only triggers on certain types of resources,
+          # you can safely hardcode the exact target format directly.
+          TARGET="${{ github.repository }}"
+          if [ "${{ github.event.pull_request.number }}" ]; then
+            TARGET="$TARGET/pull/${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event.issue.number }}" ]; then
+            TARGET="$TARGET/issue/${{ github.event.issue.number }}"
+          fi
+
+          gh-auto-labeler \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --label-definitions-file "path/to/your/repos/autolabels.yml" \
+            --run-post-labelling-actions \
+            "$TARGET" \
+            sync
+```

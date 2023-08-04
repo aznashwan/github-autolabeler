@@ -19,6 +19,7 @@
 import json
 import os
 import sys
+import uuid
 
 from autolabeler.main import main_with_args
 
@@ -101,6 +102,18 @@ def load_args_from_env():
         vars_map['COMMAND']]
 
 
+def set_github_output_var(key: str, val: str):
+    outfile_path = os.getenv("GITHUB_OUTPUT")
+    if not outfile_path:
+        raise ValueError(f"No 'GITHUB_OUTPUT' defined in env: {os.environ}")
+
+    delim = f"cbsl_autolabels_{uuid.uuid4()}"
+    # NOTE: can add output variables to GITHUB_OUTPUT with bash heredoc syntax:
+    vardef = f"{key}<<{delim}{os.linesep}{val}{os.linesep}{delim}{os.linesep}"
+    with open(outfile_path, "a") as fout:
+        fout.write(vardef)
+
+
 def main():
     args = []
     if len(sys.argv) > 1:
@@ -108,8 +121,10 @@ def main():
     else:
         args = load_args_from_env()
 
-    main_with_args(args)
-
+    labels_dicts = main_with_args(args)
+    serialized = json.dumps(labels_dicts, indent=4)
+    print(serialized)
+    set_github_output_var("labels", serialized)
 
 
 if __name__ == "__main__":
