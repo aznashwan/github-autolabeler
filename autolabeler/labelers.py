@@ -96,13 +96,24 @@ class SelectorLabeler(BaseLabeler):
                  label_name: str,
                  label_color: str,
                  label_description: str,
-                 selectors: list[selectors.Selector],
+                 selectors: list[selectors.Selector]|None=None,
+                 condition: str|None=None,
                  actioner: actions.BasePostLabellingAction|None=None):
         self._name = label_name
         self._color = label_color
         self._description = label_description
+        self._selectors = selectors or []
+        self._condition = condition
         self._actioner = actioner
-        self._selectors = selectors
+
+    def __repr__(self):
+        cls = self.__class__.__name__
+        name = self._name
+        color = self._color
+        desc = self._description[:16]
+        condition = self._condition
+        actioner = self._actioner
+        return f"{cls}({name=}, {color=}, {desc=}, {condition=}, {actioner=})"
 
     @classmethod
     def from_dict(cls, label_name: str, val: dict) -> Self:
@@ -117,6 +128,13 @@ class SelectorLabeler(BaseLabeler):
         if missing:
             raise ValueError(
                 f"Missing required fields {missing} in Labeler definition: {val}")
+
+        supported_fields = ["selectors", "action", "if"].extend(required_fields)
+        unsupported = [f for f in val if f not in supported_fields]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported fields for SelectorLabeler for {label_name=}: "
+                f"{unsupported}. Supported fields are: {supported_fields}")
 
         sels = []
         sels_defs = val.get("selectors", {})
@@ -138,28 +156,38 @@ class SelectorLabeler(BaseLabeler):
 
         return cls(
             label_name,
-            val['label-color'], val['label-description'], sels, actioner=actioner)
+            val['label-color'], val['label-description'], sels,
+            actioner=actioner, condition=val.get('if'))
 
-    def _run_selectors(self, obj: Issue|PullRequest|Repository) -> list[list[dict]]:
+    def _run_selectors(self, obj: Issue|PullRequest|Repository) -> dict:
         # overly-drawn-out code for logging purposes:
-        selector_matches = []
+        matches = {}
         for selector in self._selectors:
             res = selector.match(obj)
-            selector_matches.append(res)
+            matches[selector.get_selector_name()] = res
             LOG.debug(f"{selector}.match({obj}) = {res}")
-        return selector_matches
+        return matches
 
     def _get_labels_for_selector_matches(
-            self, selector_matches: list[list[dict]]) -> list[LabelParams]:
+            self,
+            selector_matches: dict[str, list[selectors.MatchResult]]
+        ) -> list[LabelParams]:
         if not self._selectors:
             # This is a static label and should be returned.
             return [LabelParams(
                 self._name, self._color, self._description)]
 
-        if self._selectors and not selector_matches:
-            # NOTE(aznashwan): if no selector fired, no labels should be returned.
-            LOG.debug(f"{self} matched no selector")
+        if self._selectors and not all(selector_matches.values()):
+            # NOTE(aznashwan): if any selector didn't match, return:
+            LOG.debug(
+                f"{self} had one or more selectors which did not match: "
+                f"{selector_matches}")
             return []
+
+        # TODO(aznashwan):
+        # - cartesian product results
+        # - run 'if' expression on each selector result combo
+        # - format name/description for each result
 
         label_defs = {}
         for match_set in selector_matches:
@@ -240,6 +268,11 @@ class PrefixLabeler(BaseLabeler):
         self._prefix = prefix
         self._separator = separator
         self._sublabelers = sublabelers
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(prefix={self._prefix}, "
+            f"sep='{self._separator}', sublabelers={self._sublabelers})")
 
     def _prefix_label(self, label: LabelParams) -> LabelParams:
         label.name = f"{self._prefix}{self._separator}{label.name}"

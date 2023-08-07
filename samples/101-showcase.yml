@@ -19,6 +19,7 @@ label-for-sample-file-{files-name-regex-group-1}:
   label-color: 0075ca
   # NOTE: "group-0" is the entire filepath.
   label-description: This label was created for file '{files-name-regex-group-0}'.
+  if: files.type == "text" and len(files.name_regex.groups) > 1
   selectors:
     files:
       # This will specify a regex to be matched against full filepaths in
@@ -28,6 +29,21 @@ label-for-sample-file-{files-name-regex-group-1}:
       # TODO(aznashwan):
       # type: "<binary|text>"
       # size: min/max filesizes for some "kind/bigblob"-type label combos?
+
+
+# This will define a label named 'one-at-a-time' which will automatically
+# get applied to PRs attempting to modify multiple files in a specific dir.
+one-at-a-time:
+  label-color: d73a4a  # red
+  label-description: |
+    This PR is attempting to modify multiple files in onetimers.
+  selectors:
+    files:
+      name-regex: onetimers/(.*).txt
+  if: len(files) > 1
+  action:
+    perform: close
+    comment: You cannot modify more than one file per PR in the 'onetimers' dir.
 
 
 # This will define a label named "bug" which will automatically be
@@ -88,13 +104,14 @@ pr-size-measure:
     label-color: d73a4a
     label-description: |
       This PR has more than {diff-min} lines and must be broken down into smaller PRs.
-    action:
-      close:
-        # Will only trigger for PRs larger than 10k lines.
-        on: "{diff-min}"
-        with-comment: |
-          Thank you for your contribution, but this PR is too large to be reviewed efficiently.
-          Please break down the changes into individual PRs no larger than {diff-min} lines.
     selectors:
       diff:
         min: 10000
+    # NOTE: diff.total will only be non-nil on matching PRs.
+    if: diff.total
+    action:
+      # Will only trigger for PRs larger than 10k lines.
+      perform: close
+      with-comment: |
+        Thank you for your contribution, but this PR is too large to be reviewed efficiently.
+        Please break down the changes into individual PRs no larger than {diff-min} lines.

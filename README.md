@@ -497,20 +497,20 @@ one-liner-only-file:
     label-description: |
         This file can only ever have PRs created which are at most {diff-min} LoC:
         {files-name-regex-group-0}
+    if: diff.files.get(files.name_regex.groups[0]) > diff.min
     selectors:
         files:
             # will match this exact path:
             name-regex: "path/to/untouchable/file.txt"
         diff:
-            # will match any diff greater than 1 line of code.
-            min: 1
+            # will match any diff with at least 10 lines of code.
+            min: 10
     action:
-        if: "{files-name-regex-group-0}"
         perform: close
         comment: |
             Unfortunately, we do not currently accept any major contributions to
-            the file: {files-name-regex-group-0}
-            Please only change the file {diff-min} lines at a time.
+            the file: {files.name_regex}
+            Please only change the file {diff.min} lines at a time.
 ```
 
 ## Advanced Usage

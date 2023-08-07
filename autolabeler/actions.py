@@ -48,11 +48,18 @@ class OnMatchFormatAction(BasePostLabellingAction):
             comment_format: str|None=None):
         self._if_format = if_format
         self._action_format = perform_action_format
-        self._with_comment_format = comment_format
+        self._with_comment_format = comment_format or ""
+
+    def __repr__(self):
+        cls = self.__class__.__name__
+        perform = self._action_format
+        comment = self._with_comment_format[:16]
+        return f"{cls})({perform=}, {comment=})"
+
 
     @classmethod
     def from_dict(cls, val: dict) -> Self:
-        supported_keys = ["if", "perform", "comment"]
+        supported_keys = ["perform", "comment"]
         unsupported = [k for k in val if k not in supported_keys]
         if unsupported:
             raise ValueError(
@@ -86,6 +93,7 @@ class OnMatchFormatAction(BasePostLabellingAction):
             obj.update()
         LOG.info(f"{obj} is now {state}")
 
+    # TODO(aznashwan): make it take one single match.
     def run_post_action_for_matches(
             self, obj: ActionableObject, match_sets: list[list[dict]]):
         if not isinstance(obj, ActionableObject):
@@ -111,8 +119,7 @@ class OnMatchFormatAction(BasePostLabellingAction):
                         f"Selector match value were: {match}: {ex}")
                     LOG.error(msg)
                     continue
-        LOG.info(
-            f"{self}: trigger matches for object {obj} were: {triggers}")
+        LOG.info(f"{self}: trigger matches for object {obj} were: {triggers}")
 
         if triggers:
             actions = {t[1]: t for t in triggers}
