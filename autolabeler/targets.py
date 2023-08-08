@@ -13,6 +13,7 @@
 #    under the License.
 
 import abc
+import logging
 
 from github import Github
 from github.Issue import Issue
@@ -21,10 +22,9 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from autolabeler.labelers import LabelParams
-from autolabeler import utils
 
 
-LOG = utils.getStdoutLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 class BaseLabelsTarget(metaclass=abc.ABCMeta):

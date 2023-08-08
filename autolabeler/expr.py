@@ -100,12 +100,13 @@ def _check_expression_safety(
             _check_expression_safety(expr.left, variables)  # pyright: ignore
             for cmp in expr.comparators:  # pyright: ignore
                 _check_expression_safety(cmp, variables)
-        case some if some in (ast.Attribute, ast.Constant, ast.Subscript):
+        case some if some in (
+                ast.Attribute, ast.Constant, ast.Subscript, ast.BoolOp):
             pass
         case other:
             supported_exprs = (
                     ast.Expression, ast.Name, ast.BinOp, ast.Compare,
-                    ast.Call, ast.Constant, ast.Attribute)
+                    ast.Call, ast.Constant, ast.Attribute, ast.BoolOp)
             raise SyntaxError(
                 f"Expression {expr} must be one of {supported_exprs}. "
                 f"Actual type: {other}")

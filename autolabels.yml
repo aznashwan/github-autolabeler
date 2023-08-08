@@ -54,7 +54,7 @@ bug:
 
 manual-{regex.comment.groups[1]}:
   label-color: d73a4a
-  label-description: "This label was defined through a maintainer comment with: {regex.comment.full}"
+  label-description: "This label was defined through a maintainer comment with: {regex.comment.match}"
   selectors:
     regex:
       maintainer_comments_only: true
@@ -70,7 +70,7 @@ pr-size-measure:
       This PR is between {diff.min} and {diff.max} lines of code.
     selectors:
       diff:
-        type: net # Can be: additions/deletions/total/net (net = additions - deletions)
+        type: total  # Can be: additions/deletions/total/net (net = additions - deletions)
         min: 1
         max: 1000
 

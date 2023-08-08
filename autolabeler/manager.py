@@ -12,19 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 
 from github import Github
 from github.Issue import Issue
 from github.PullRequest import PullRequest
 
-
 from autolabeler import labelers
 from autolabeler.labelers import LabelParams
 from autolabeler import targets
-from autolabeler import utils
 
 
-LOG = utils.getStdoutLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 class LabelsManager():

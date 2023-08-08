@@ -13,6 +13,7 @@
 #    under the License.
 
 import abc
+import logging
 import re
 import typing
 from typing import Self
@@ -23,10 +24,8 @@ from github.IssueComment import IssueComment
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from autolabeler import utils
 
-
-LOG = utils.getStdoutLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 MATCH_RESULT_FIELD_REGEX = re.compile(r'^[a-zA-Z_]\w*$')
 
@@ -46,7 +45,7 @@ class MatchResult(dict):
             if not self._check_key_name(key_name):
                 LOG.warning(
                     f"Unacceptable dict key '{key_name}' for attribute access dict."
-                    "It will require accessing by dictionary key indexing.")
+                    " It will require accessing by dictionary key indexing.")
             self[key_name] = MatchResult(value) if type(value) is dict else value
 
     def get_reference_value(self) -> object|None:
@@ -496,7 +495,7 @@ def _get_match_groups(
     if case_insensitive:
         flags = [re.IGNORECASE]
 
-    match = re.search(regex, value, *flags)
+    match = re.search(regex, value[0:], *flags)
     if not match:
         return None
 
@@ -505,8 +504,6 @@ def _get_match_groups(
         "match": match.group(),
         "groups": list(match.groups()),
     }
-    # for i, group in enumerate(match.groups()):
-    #     res[f"group_{i}"] = group
 
     LOG.debug(f"Match result for {regex=} to {value=}: {res}")
     return res

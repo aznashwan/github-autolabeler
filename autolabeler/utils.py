@@ -13,42 +13,44 @@
 #    under the License.
 
 import logging
-from typing import Union
-
-from github.Issue import Issue
-from github.PullRequest import PullRequest
 
 
-LabellableObject = Union[PullRequest, Issue]
+class ColorFormatter(logging.Formatter):
+
+    bold = "\x1b[1m"
+    reset = "\x1b[0m"
+    red = "\x1b[31;20m"
+    cyan = "\x1b[36;20m"
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    datefmt = "%(asctime)s.%(msecs)s"
+    format = f"{cyan}%(name)s:%(lineno)s{reset}: %(message)s"  # pyright: ignore
+
+    FORMATS = {
+        logging.DEBUG: f"{bold}{grey}{datefmt} %(levelname)s{reset} - {format}",
+        logging.INFO: f"{bold}{grey}{datefmt} %(levelname)s{reset} - {format}",
+        logging.WARNING: f"{bold}{yellow}{datefmt} %(levelname)s{reset} - {format}",
+        logging.ERROR: f"{bold}{red}{datefmt} %(levelname)s{reset} - {format}",
+        logging.CRITICAL: f"{bold}{red}{datefmt} %(levelname)s{reset} - {format}",
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
 
 
-LOG = logging.getLogger()
-__LOGGER = None
-
-
-def getStdoutLogger(name="", level=logging.DEBUG):
-    global __LOGGER
-    if __LOGGER:
-        return __LOGGER
-
-    # create logger
-    if not name:
-        name = "github-autolabeler"
-    logger = logging.getLogger(name)
+def setupLogging(level=logging.DEBUG):
+    logger = logging.getLogger()
     logger.setLevel(level)
 
     # create console handler and set level to debug
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
 
-    # create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    # add formatter to ch
+    formatter = ColorFormatter()
     ch.setFormatter(formatter)
 
-    # add ch to logger
     logger.addHandler(ch)
 
-    __LOGGER = logger
     return logger

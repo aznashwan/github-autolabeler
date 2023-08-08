@@ -14,6 +14,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 from io import IOBase
@@ -24,7 +25,10 @@ import yaml
 from autolabeler import manager
 from autolabeler import utils
 
-LOG = utils.getStdoutLogger(__name__)
+
+utils.setupLogging()
+
+LOG = logging.getLogger(__name__)
 
 
 def _add_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

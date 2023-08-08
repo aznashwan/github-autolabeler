@@ -15,6 +15,7 @@
 import abc
 import dataclasses
 import itertools
+import logging
 import re
 import traceback
 from typing import Self
@@ -27,10 +28,9 @@ from github.Repository import Repository
 from autolabeler import actions
 from autolabeler import expr
 from autolabeler import selectors
-from autolabeler import utils
 
 
-LOG = utils.getStdoutLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -91,7 +91,7 @@ class BaseLabeler(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+    def run_post_labelling_actions(self, obj: Issue|PullRequest):
         _ = obj
         return NotImplemented
 
@@ -251,7 +251,7 @@ class SelectorLabeler(BaseLabeler):
             if not new:
                 continue
 
-            if new_labels_map.get(new.name) != new:
+            if new.name in new_labels_map and new_labels_map[new.name] != new:
                 LOG.warning(
                     f"{self} got conflicting colors/descriptions for label "
                     f"{new.name}: value already present {new_labels_map.get(new.name)}"
@@ -288,7 +288,7 @@ class SelectorLabeler(BaseLabeler):
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         return self._get_nonstatic_labels(issue)
 
-    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+    def run_post_labelling_actions(self, obj: Issue|PullRequest):
         if not self._actioner:
             return
 
@@ -336,7 +336,7 @@ class PrefixLabeler(BaseLabeler):
         res = [slblr.get_labels_for_issue(issue) for slblr in self._sublabelers]
         return self._prefix_labels(list(itertools.chain(*res)))
 
-    def run_post_labelling_actions(self, obj: utils.LabellableObject):
+    def run_post_labelling_actions(self, obj: Issue|PullRequest):
         for sublabeler in self._sublabelers:
             sublabeler.run_post_labelling_actions(obj)
 

@@ -13,15 +13,14 @@
 #    under the License.
 
 import abc
+import logging
 from typing import Self, Union
 
 from github.Issue import Issue
 from github.PullRequest import PullRequest
 
-from autolabeler import utils
 
-
-LOG = utils.getStdoutLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 ActionableObject = Union[PullRequest, Issue]
 
