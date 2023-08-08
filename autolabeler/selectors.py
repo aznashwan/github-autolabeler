@@ -44,8 +44,9 @@ class MatchResult(dict):
         for key, value in d.items():
             key_name = str(key)
             if not self._check_key_name(key_name):
-                raise ValueError(
-                    f"Unacceptable dict key '{key_name}' for attribute access dict")
+                LOG.warning(
+                    f"Unacceptable dict key '{key_name}' for attribute access dict."
+                    "It will require accessing by dictionary key indexing.")
             self[key_name] = MatchResult(value) if type(value) is dict else value
 
     def get_reference_value(self) -> object|None:
@@ -117,27 +118,27 @@ class RegexSelector(Selector):
     def from_dict(cls, val: dict) -> Self:
         """ Supports dict with following keys:
 
-        case-insensitive: bool,
+        case_insensitive: bool,
         title: "<regex for title>",
         description: "<regex for description>",
-        comments: "<regex for comments>",
-        maintainer-comments-only: bool,
+        comment: "<regex for comments>",
+        maintainer_comments_only: bool,
         """
         supported_keys = [
-            "case-insensitive", "title", "description",
-            "comments", "maintainer-comments", "maintainer-comments-only"]
+            "case_insensitive", "title", "description",
+            "comments", "maintainer_comments", "maintainer_comments_only"]
         if not any(k in val for k in supported_keys):
             raise ValueError(
                 f"FileRegexSelector requires at least one regex key "
                 f"({supported_keys}). Got {val}")
 
         kwargs = {
-            "case_insensitive": val.get("case-insensitive", False),
+            "case_insensitive": val.get("case_insensitive", False),
             "re_title": val.get("title", ""),
             "re_description": val.get("description", ""),
-            "re_comments": val.get("comments", ""),
+            "re_comments": val.get("comment", ""),
             "maintainer_comments_only": val.get(
-                "maintainer-comments-only", True)}
+                "maintainer_comments_only", True)}
 
         return cls(**kwargs)
 
@@ -219,7 +220,9 @@ class RegexSelector(Selector):
         comms = self._get_comment_matches(obj)
         # Update every comment match result with the title/description matches.
         for comment_match in comms:
-            comment_match.update(tdms)
+            entry = {"comment": comment_match}
+            entry.update(tdms)
+            res.append(entry)
 
         if not res and tdms:
             res = [tdms]
@@ -245,14 +248,14 @@ class FilesSelector(Selector):
 
     @classmethod
     def from_dict(cls, val: dict) -> Self:
-        supported_keys = ["name-regex", "type"]
+        supported_keys = ["name_regex", "type"]
         if not any(k in val for k in supported_keys):
             raise ValueError(
                 f"FilesSelector requires at least one options key "
                 f"({supported_keys}). Got {val}")
 
         kwargs = {
-            "file_name_re": val.get("name-regex", ""),
+            "file_name_re": val.get("name_regex", ""),
             "file_type": val.get("type", "")}
 
         return cls(**kwargs)
@@ -402,12 +405,12 @@ class DiffSelector(Selector):
 
         files = {}
         lister = FileLister(obj)
-        for filepath, file in lister.list_file_paths():
+        for filepath, file in lister.list_file_paths().items():
             files[filepath] = {
                 "total": file.additions + file.deletions,
                 "additions": file.additions,
                 "deletions": file.deletions,
-                "net": file.additions - file.deletion}
+                "net": file.additions - file.deletions}
         res["files"] = files  # pyright: ignore
 
         return [MatchResult(res)]
@@ -451,7 +454,7 @@ SELECTOR_CLASSES = [
 
 
 def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.Type:
-    selector_name_map = {s.name: s for s in SELECTOR_CLASSES}
+    selector_name_map = {s.get_selector_name(): s for s in SELECTOR_CLASSES}
     selector = selector_name_map.get(selector_name)
 
     if not selector:

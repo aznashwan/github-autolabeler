@@ -15,6 +15,8 @@
 import abc
 import dataclasses
 import itertools
+import re
+import traceback
 from typing import Self
 
 from github.Issue import Issue
@@ -23,6 +25,7 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from autolabeler import actions
+from autolabeler import expr
 from autolabeler import selectors
 from autolabeler import utils
 
@@ -61,6 +64,8 @@ class LabelParams:
         return self.to_dict()
 
     def __eq__(self, other: Self) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
         return self.name == other.name and \
                self.color == other.color and \
                self.description == other.description
@@ -127,9 +132,10 @@ class SelectorLabeler(BaseLabeler):
         missing = [field for field in required_fields if field not in val]
         if missing:
             raise ValueError(
-                f"Missing required fields {missing} in Labeler definition: {val}")
+                f"Missing required fields {missing} in SelectorLabeler definition: {val}")
 
-        supported_fields = ["selectors", "action", "if"].extend(required_fields)
+        supported_fields = ["selectors", "action", "if"]
+        supported_fields.extend(required_fields)
         unsupported = [f for f in val if f not in supported_fields]
         if unsupported:
             raise ValueError(
@@ -168,6 +174,31 @@ class SelectorLabeler(BaseLabeler):
             LOG.debug(f"{selector}.match({obj}) = {res}")
         return matches
 
+    def _run_statement(self, statement: str, variables: dict) -> object:
+        try:
+            expr.check_string_expression(statement, variables)
+            return expr.evaluate_string_expression(statement, variables)
+        except (NameError, SyntaxError) as ex:
+            raise ex.__class__(
+                f"Failed to run statement '{statement}': {ex}") from ex
+
+    def _format_label_string(self, string: str, selector_matches: dict) -> str:
+        label_format_group_re = r"\{([^\}]+)\}"
+        regex = re.compile(label_format_group_re)
+        result = ""
+        search_pos = 0
+        while True:
+            match = regex.search(string, pos=search_pos)
+            if not match:
+                return f"{result}{string[search_pos:]}"
+            result = f"{result}{string[search_pos:match.start()]}"
+
+            statement = match.group(0)
+            expr_res = self._run_statement(
+                statement[1:-1], selector_matches)
+            result = f"{result}{expr_res}"
+            search_pos = match.end()
+
     def _get_labels_for_selector_matches(
             self,
             selector_matches: dict[str, list[selectors.MatchResult]]
@@ -177,46 +208,57 @@ class SelectorLabeler(BaseLabeler):
             return [LabelParams(
                 self._name, self._color, self._description)]
 
-        if self._selectors and not all(selector_matches.values()):
-            # NOTE(aznashwan): if any selector didn't match, return:
-            LOG.debug(
-                f"{self} had one or more selectors which did not match: "
-                f"{selector_matches}")
+        successful_matches = []
+        selector_matches_index_map = {}  # maps index in `selector_matches` to its name
+        for selector, match in selector_matches.items():
+            if match:
+                selector_matches_index_map[len(successful_matches)] = selector
+                successful_matches.append(match)
+        if self._selectors and not successful_matches:
+            # NOTE(aznashwan): if no selector matched at all, return:
+            LOG.debug(f"{self} had no selector matches whatsoever, returning.")
             return []
 
-        # TODO(aznashwan):
-        # - cartesian product results
-        # - run 'if' expression on each selector result combo
-        # - format name/description for each result
+        new_labels_map = {}
+        for match_set in itertools.product(*successful_matches):
+            # The match_dict will map selector names to their results.
+            match_dict = {
+                selector_matches_index_map[i]: selector_match
+                for i, selector_match in enumerate(match_set)}
 
-        label_defs = {}
-        for match_set in selector_matches:
-            for match in match_set:
-                new = None
-                try:
-                    name = self._name.format(**match)
-                    description = self._description.format(**match)
-                    new = LabelParams(
-                        name, self._color,
-                        description)
-                except Exception as ex:
-                    msg = (
-                        f"Failed to format match data into '{self._name}' and "
-                        f"'{self._description}'. Selector match values were: "
-                        f"{match}: {ex}")
-                    LOG.error(msg)
-                    continue
+            new = None
+            LOG.debug(
+                f"{self}._get_labels_for_selector_matches(): attempting to format "
+                f"with selectors match values: {match_dict}")
+            try:
+                name = self._format_label_string(
+                    self._name, match_dict)
+                description = self._format_label_string(
+                    self._description, match_dict)
+                if self._condition:
+                    condition_result = self._run_statement(
+                        self._description, match_dict)
+                    if not bool(condition_result):
+                        LOG.debug(
+                            f"{self}: conditional check for {self._condition} "
+                            f"failed with {condition_result} for match set: "
+                            f"{match_set}")
+                        continue
+                new = LabelParams(name, self._color, description)
+            except NameError as e:
+                LOG.debug(f"{self}: skipping error formatting label params: {e}")
+            if not new:
+                continue
 
-                if name not in label_defs:
-                    label_defs[name] = new
-                elif label_defs[name] != new:
-                    LOG.warning(
-                        f"{self} got conflicting colors/descriptions for label "
-                        f"{name}: value already present ({label_defs[name]}) "
-                        f"different from new value: {new}")
-            LOG.debug(f"{self} determined following labels: {label_defs}")
+            if new_labels_map.get(new.name) != new:
+                LOG.warning(
+                    f"{self} got conflicting colors/descriptions for label "
+                    f"{new.name}: value already present {new_labels_map.get(new.name)}"
+                    f" is different from new value: {new}")
 
-        return list(label_defs.values())
+            new_labels_map[new.name] = new
+
+        return list(new_labels_map.values())
 
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         # If this a simple label with a static name, it always applies to the repo.
@@ -309,6 +351,7 @@ def load_labelers_from_config(config: dict) -> list[BaseLabeler]:
         except (ValueError, TypeError) as err:
             LOG.info(
                 f"Failed to load labeler on key {key}, assuming it's a prefix: {err}")
+            LOG.error(traceback.format_exc())
 
         prefixer = PrefixLabeler(key, load_labelers_from_config(val))
         toplevel_labelers.append(prefixer)

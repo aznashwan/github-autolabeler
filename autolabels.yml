@@ -15,15 +15,15 @@ label-prefix:
 
 
 # This will define as many labels as there are filepath regex matches.
-label-for-sample-file-{files-name-regex-group-1}:
+label-for-sample-file-{files.name_regex.groups[0]}:
   label-color: 0075ca
-  # NOTE: "group-0" is the entire filepath.
-  label-description: This label was created for file '{files-name-regex-group-0}'.
+  # NOTE: "match" will contain the entire match.
+  label-description: This label was created for file '{files.name_regex.match}'.
   selectors:
     files:
       # This will specify a regex to be matched against full filepaths in
       # the repo tree. 'files-name-group-0' will be the entire filename.
-      name-regex: "samples/(.*).yaml"
+      name_regex: "samples/(.*).yaml"
 
       # TODO(aznashwan):
       # type: "<binary|text>"
@@ -38,7 +38,7 @@ bug:
   selectors:
     regex:
       # This allows for case insensitive searches. (default is false)
-      case-insensitive: true
+      case_insensitive: true
 
       # This will make the label be applied to PRs/Issues whose titles/descriptions
       # match the given regex. (in this case, some simple keywords)
@@ -47,18 +47,18 @@ bug:
 
       # This will make the label applied to PRs/Issues where anyone comments
       # the given magic string on a single line within the comment.
-      comments: "^(/label-me-as bug)$"
+      comment: "^(/label-me-as bug)$"
       # Only allows maintainers to add this label via comment. (default is true)
-      maintainer-comments-only: false
+      maintainer_comments_only: false
 
 
-manual-{regex-comments-group-2}:
+manual-{regex.comment.groups[1]}:
   label-color: d73a4a
-  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
+  label-description: "This label was defined through a maintainer comment with: {regex.comment.full}"
   selectors:
     regex:
-      maintainer-comments-only: true
-      comments: "^(/label-me-as ([\\-a-z]+))$"
+      maintainer_comments_only: true
+      comment: "^(/label-me-as ([\\-a-z]+))$"
 
 
 # This will define two labels named "pr-size-measure/{small,large}" that will
@@ -67,7 +67,7 @@ pr-size-measure:
   small:
     label-color: 0075ca
     label-description: |
-      This PR is between {diff-min} and {diff-max} lines of code.
+      This PR is between {diff.min} and {diff.max} lines of code.
     selectors:
       diff:
         type: net # Can be: additions/deletions/total/net (net = additions - deletions)
@@ -77,7 +77,7 @@ pr-size-measure:
   large:
     label-color: d73a4a
     label-description: |
-      This PR is between {diff-min} and {diff-max} lines of code.
+      This PR is between {diff.min} and {diff.max} lines of code.
     selectors:
       diff:
         min: 1000
@@ -86,14 +86,13 @@ pr-size-measure:
   too-big:
     label-color: d73a4a
     label-description: |
-      This PR has more than {diff-min} lines and must be broken down into smaller PRs.
+      This PR has more than {diff.min} lines and must be broken down into smaller PRs.
     selectors:
       diff:
         # NOTE: omitting 'max/min' will set the bounds to +/- Infinity respectively.
         min: 10000
     action:
       # Will only trigger on PRs if the 'diff' selector returns a match.
-      if: "{diff-min}"
       perform: close
       # NOTE: can include markdown directives in reply comment.
       comment: |
@@ -101,4 +100,4 @@ pr-size-measure:
 
         Unfortunately, this PR is *too large to be reviewed effectively*. :disappointed:
 
-        Please break down the changes into individual PRs no larger than {diff-min} lines.
+        Please break down the changes into individual PRs no larger than {diff.min} lines.

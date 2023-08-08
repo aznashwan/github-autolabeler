@@ -36,7 +36,7 @@ def _get_safe_builtins() -> dict:
         "eval", "exec", "exit", "open", "input",
         "memoryview", "print", "quit"]
 
-    builtins_copy = {k: v for k, v in __builtins__.__dict__.items()}
+    builtins_copy = {k: v for k, v in __builtins__.items()}
     for item in forbidden:
         _ = builtins_copy.pop(item, None)
 
@@ -96,12 +96,12 @@ def _check_expression_safety(
         case ast.BinOp:
             _check_expression_safety(expr.left, variables)  # pyright: ignore
             _check_expression_safety(expr.right, variables)  # pyright: ignore
-        case ast.Constant:
+        case some if some in (ast.Attribute, ast.Constant, ast.Subscript):
             pass
         case other:
             supported_exprs = (
                     ast.Expression, ast.Name, ast.BinOp, ast.Compare,
-                    ast.Call, ast.Constant)
+                    ast.Call, ast.Constant, ast.Attribute)
             raise SyntaxError(
-                f"Expression {other} must be one of {supported_exprs}. "
-                f"Actual: {type(expr)=}")
+                f"Expression {expr} must be one of {supported_exprs}. "
+                f"Actual type: {other}")

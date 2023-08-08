@@ -44,9 +44,8 @@ class OnMatchFormatAction(BasePostLabellingAction):
     """ Runs a simple action if able to format at least one selector match. """
 
     def __init__(
-            self, if_format: str, perform_action_format: str,
+            self, perform_action_format: str,
             comment_format: str|None=None):
-        self._if_format = if_format
         self._action_format = perform_action_format
         self._with_comment_format = comment_format or ""
 
@@ -54,8 +53,7 @@ class OnMatchFormatAction(BasePostLabellingAction):
         cls = self.__class__.__name__
         perform = self._action_format
         comment = self._with_comment_format[:16]
-        return f"{cls})({perform=}, {comment=})"
-
+        return f"{cls}({perform=}, {comment=})"
 
     @classmethod
     def from_dict(cls, val: dict) -> Self:
@@ -79,7 +77,7 @@ class OnMatchFormatAction(BasePostLabellingAction):
                 f"{cls}.from_dict() got unsupported 'perform' action: {action}. "
                 f"Supported actions are: {supported_actions}")
 
-        return cls(val["if"], action, val["comment"])
+        return cls(action, val["comment"])
 
     def _add_comment(self, obj: ActionableObject, comment: str):
         if isinstance(obj, PullRequest):
@@ -106,15 +104,14 @@ class OnMatchFormatAction(BasePostLabellingAction):
         for match_set in match_sets:
             for match in match_set:
                 try:
-                    on = self._if_format.format(**match)
                     action = self._action_format.format(**match)
                     comment = None
                     if self._with_comment_format:
                         comment = self._with_comment_format.format(**match)
-                    triggers.append((on, action, comment))
+                    triggers.append((action, comment))
                 except Exception as ex:
                     msg = (
-                        f"Failed to format action params '{self._if_format=}', "
+                        f"Failed to format action params '{self}', "
                         f"'{self._action_format=}', or '{self._with_comment_format=}'. "
                         f"Selector match value were: {match}: {ex}")
                     LOG.error(msg)
@@ -122,13 +119,13 @@ class OnMatchFormatAction(BasePostLabellingAction):
         LOG.info(f"{self}: trigger matches for object {obj} were: {triggers}")
 
         if triggers:
-            actions = {t[1]: t for t in triggers}
+            actions = {t[0]: t for t in triggers}
             if len(actions) > 1:
                 raise ValueError(
                     f"{self}: multiple actions ({actions}) triggered by matches: "
                     f"{match_sets}")
             action = list(actions.keys())[0]
-            comments = {t[2] for t in  triggers}
+            comments = {t[1] for t in  triggers}
 
             for comment in comments:
                 self._add_comment(obj, comment)
