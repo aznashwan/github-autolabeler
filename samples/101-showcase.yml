@@ -3,6 +3,8 @@ example-label:
   label-color: 0075ca  # blue
   label-description: This is a simple example static label.
 
+# Test comment with two lines.
+# pass
 
 # This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
 label-prefix:
