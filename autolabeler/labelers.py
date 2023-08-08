@@ -176,6 +176,7 @@ class SelectorLabeler(BaseLabeler):
 
     def _run_statement(self, statement: str, variables: dict) -> object:
         try:
+            statement = statement.strip()
             expr.check_string_expression(statement, variables)
             return expr.evaluate_string_expression(statement, variables)
         except (NameError, SyntaxError) as ex:
@@ -237,7 +238,7 @@ class SelectorLabeler(BaseLabeler):
                     self._description, match_dict)
                 if self._condition:
                     condition_result = self._run_statement(
-                        self._description, match_dict)
+                        self._condition, match_dict)
                     if not bool(condition_result):
                         LOG.debug(
                             f"{self}: conditional check for {self._condition} "

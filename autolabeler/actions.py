@@ -100,6 +100,8 @@ class OnMatchFormatAction(BasePostLabellingAction):
                 f"object {obj} ({type(obj)})")
             return
 
+        # HACK(aznashwan): early return for debugging.
+
         triggers = []
         for match_set in match_sets:
             for match in match_set:

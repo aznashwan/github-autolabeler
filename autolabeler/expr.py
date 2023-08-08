@@ -96,6 +96,10 @@ def _check_expression_safety(
         case ast.BinOp:
             _check_expression_safety(expr.left, variables)  # pyright: ignore
             _check_expression_safety(expr.right, variables)  # pyright: ignore
+        case ast.Compare:
+            _check_expression_safety(expr.left, variables)  # pyright: ignore
+            for cmp in expr.comparators:  # pyright: ignore
+                _check_expression_safety(cmp, variables)
         case some if some in (ast.Attribute, ast.Constant, ast.Subscript):
             pass
         case other:
