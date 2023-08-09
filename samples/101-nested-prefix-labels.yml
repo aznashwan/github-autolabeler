@@ -1,0 +1,18 @@
+# This defines a static static label named 'example-label' with the given props.
+example-label:
+  color: blue
+  description: This is a simple example static label.
+
+
+# This defines two "namespaced" labels named: prefix/sub{1,2}.
+prefix:
+  sub1:
+    color: blue
+    description: This is a simple first sublabel.
+  sub2:
+    color: red
+    description: This is a simple second sublabel.
+  midfix:
+    sub11:
+      color: navy
+      description: This is a double-nested sublabel.

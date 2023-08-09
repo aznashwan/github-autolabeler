@@ -13,6 +13,22 @@
 #    under the License.
 
 import logging
+import re
+
+
+RGB_COLOR_REGEX = re.compile("[a-fA-F0-9]{6}")
+
+LABEL_COLOR_CODES = {
+    "red": "B60205",
+    "orange": "D93F0B",
+    "yellow": "FBCA04",
+    "green": "0E8A16",
+    "teal": "006B75",
+    "blue": "1D76DB",
+    "navy": "0052CC",
+    "bluer": "0052CC",
+    "purple": "5319E7",
+}
 
 
 class ColorFormatter(logging.Formatter):
@@ -54,3 +70,13 @@ def setupLogging(level=logging.DEBUG):
     logger.addHandler(ch)
 
     return logger
+
+
+def map_color_string(color: str):
+    color = LABEL_COLOR_CODES.get(color, color)
+    if not RGB_COLOR_REGEX.match(color):
+        raise ValueError(
+            f"Invalid color format '{color}'. Color must be either a "
+            f"6-hex-digit case-insensitive RGB value or one of the "
+            f"following: {LABEL_COLOR_CODES}")
+    return color.lower()

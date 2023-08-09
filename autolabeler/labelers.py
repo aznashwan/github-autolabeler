@@ -25,7 +25,7 @@ from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from autolabeler import actions
+from autolabeler import actions, utils
 from autolabeler import expr
 from autolabeler import selectors
 
@@ -105,7 +105,7 @@ class SelectorLabeler(BaseLabeler):
                  condition: str|None=None,
                  actioner: actions.BasePostLabellingAction|None=None):
         self._name = label_name
-        self._color = label_color
+        self._color = utils.map_color_string(label_color)
         self._description = label_description
         self._selectors = selectors or []
         self._condition = condition
@@ -123,7 +123,7 @@ class SelectorLabeler(BaseLabeler):
     @classmethod
     def from_dict(cls, label_name: str, val: dict) -> Self:
         required_fields = [
-            "label-color", "label-description"]
+            "color", "description"]
         if not type(val) is dict:
             raise TypeError(
                 f"Expected dict with keys {required_fields}, "
@@ -161,9 +161,8 @@ class SelectorLabeler(BaseLabeler):
             actioner = actions.OnMatchFormatAction.from_dict(actioner_def)
 
         return cls(
-            label_name,
-            val['label-color'], val['label-description'], sels,
-            actioner=actioner, condition=val.get('if'))
+            label_name, val['color'], val['description'],
+            selectors=sels, actioner=actioner, condition=val.get('if'))
 
     def _run_selectors(self, obj: Issue|PullRequest|Repository) -> dict:
         # overly-drawn-out code for logging purposes:
@@ -241,7 +240,7 @@ class SelectorLabeler(BaseLabeler):
                         self._condition, match_dict)
                     if not bool(condition_result):
                         LOG.debug(
-                            f"{self}: conditional check for {self._condition} "
+                            f"{self}: conditional check for '{self._condition}' "
                             f"failed with {condition_result} for match set: "
                             f"{match_set}")
                         continue
@@ -296,65 +295,25 @@ class SelectorLabeler(BaseLabeler):
         self._actioner.run_post_action_for_matches(obj, selector_matches)
 
 
-class PrefixLabeler(BaseLabeler):
-    """ Class for handling label prefix groups.
+def load_labelers_from_config(
+        config: dict, prefix: str="", separator: str="/") -> list[BaseLabeler]:
+    if not isinstance(config, dict):
+        raise ValueError(
+            "Failed to recursively parse config: got to the following "
+            "non-mapping object in hopes it would be a labeler definition "
+            f"containing a 'color' and 'description' field: {config}")
 
-    Simply aggregates/delegates labels generation to the contained concrete
-    label generators and just adds its prefix to all labels.
-    """
-
-    def __init__(self, prefix: str, sublabelers: list[BaseLabeler],
-                 separator='/'):
-        if not sublabelers:
-            raise ValueError(
-                f"{self} expects at least one sub-labeler. Got: {sublabelers}")
-        self._prefix = prefix
-        self._separator = separator
-        self._sublabelers = sublabelers
-
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(prefix={self._prefix}, "
-            f"sep='{self._separator}', sublabelers={self._sublabelers})")
-
-    def _prefix_label(self, label: LabelParams) -> LabelParams:
-        label.name = f"{self._prefix}{self._separator}{label.name}"
-        return label
-
-    def _prefix_labels(self, labels: list[LabelParams]) -> list[LabelParams]:
-        return list(map(self._prefix_label, labels))
-
-    def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
-        res = [slblr.get_labels_for_repo(repo) for slblr in self._sublabelers]
-        return self._prefix_labels(list(itertools.chain(*res)))
-
-    def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
-        res = [slblr.get_labels_for_pr(pr) for slblr in self._sublabelers]
-        return self._prefix_labels(list(itertools.chain(*res)))
-
-    def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
-        res = [slblr.get_labels_for_issue(issue) for slblr in self._sublabelers]
-        return self._prefix_labels(list(itertools.chain(*res)))
-
-    def run_post_labelling_actions(self, obj: Issue|PullRequest):
-        for sublabeler in self._sublabelers:
-            sublabeler.run_post_labelling_actions(obj)
-
-
-def load_labelers_from_config(config: dict) -> list[BaseLabeler]:
-    toplevel_labelers = []
+    required_labeler_keys = ['color', 'description']
+    labelers = []
     for key, val in config.items():
-        LOG.info(f"Attempting to load labeler from: {config}")
-        # Assume it's a plain labeler until proven otherwise.
-        try:
-            toplevel_labelers.append(SelectorLabeler.from_dict(key, val))
-            continue
-        except (ValueError, TypeError) as err:
-            LOG.info(
-                f"Failed to load labeler on key {key}, assuming it's a prefix: {err}")
-            LOG.error(traceback.format_exc())
+        name = key
+        if prefix:
+            name = f"{prefix}{separator}{key}"
+        if all(k in val for k in required_labeler_keys):
+            labelers.append(
+                SelectorLabeler.from_dict(name, val))
+        else:
+            labelers.extend(load_labelers_from_config(
+                val, prefix=name, separator=separator))
 
-        prefixer = PrefixLabeler(key, load_labelers_from_config(val))
-        toplevel_labelers.append(prefixer)
-
-    return toplevel_labelers
+    return labelers

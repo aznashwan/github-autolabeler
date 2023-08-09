@@ -1,8 +1,8 @@
 # This will define a label named 'one-at-a-time' which will automatically
 # get applied to PRs attempting to modify multiple files in a specific dir.
 one-at-a-time:
-  label-color: d73a4a  # red
-  label-description: |
+  color: green
+  description: |
     This PR is attempting to modify '{ files.name_regex.match }' with more than { diff.min } lines.
   selectors:
     files:
