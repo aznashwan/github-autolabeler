@@ -13,16 +13,26 @@
 #    under the License.
 
 import abc
+import enum
 import logging
 from typing import Self, Union
 
 from github.Issue import Issue
 from github.PullRequest import PullRequest
 
+from autolabeler import expr
+from autolabeler.selectors import MatchResult
+
 
 LOG = logging.getLogger(__name__)
 
 ActionableObject = Union[PullRequest, Issue]
+
+
+class PostLabellingAction(enum.Enum):
+    OPEN = 'open'
+    CLOSE = 'close'
+    APPROVE = 'approve'
 
 
 class BasePostLabellingAction(metaclass=abc.ABCMeta):
@@ -33,29 +43,34 @@ class BasePostLabellingAction(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def run_post_action_for_matches(
-            self, obj: ActionableObject, match_sets: list[list[dict]]):
-        _ = match_sets
+    def get_post_labelling_action(self, match: MatchResult) -> PostLabellingAction:
+        return NotImplemented
+
+    @abc.abstractmethod
+    def get_post_labelling_comment(self, match: MatchResult) -> str:
         return NotImplemented
 
 
 class OnMatchFormatAction(BasePostLabellingAction):
-    """ Runs a simple action if able to format at least one selector match. """
+    """ Returns a simple action and formatted comment based on the given match. """
 
     def __init__(
             self, perform_action_format: str,
             comment_format: str|None=None):
         self._action_format = perform_action_format
-        self._with_comment_format = comment_format or ""
+        self._comment_format = comment_format or ""
 
     def __repr__(self):
         cls = self.__class__.__name__
         perform = self._action_format
-        comment = self._with_comment_format[:16]
+        comment = self._comment_format[:16]
         return f"{cls}({perform=}, {comment=})"
 
     @classmethod
     def from_dict(cls, val: dict) -> Self:
+        if not isinstance(val, dict):
+            raise TypeError(f"{cls.__name__}.from_dict() got non-dict: {val}")
+
         supported_keys = ["perform", "comment"]
         unsupported = [k for k in val if k not in supported_keys]
         if unsupported:
@@ -78,66 +93,11 @@ class OnMatchFormatAction(BasePostLabellingAction):
 
         return cls(action, val["comment"])
 
-    def _add_comment(self, obj: ActionableObject, comment: str):
-        if isinstance(obj, PullRequest):
-            obj = obj.as_issue()
-        if comment:
-            obj.create_comment(comment)
+    def get_post_labelling_action(self, match: MatchResult) -> PostLabellingAction:
+        return PostLabellingAction(
+            expr.format_string_with_expressions(
+                self._action_format, match))
 
-    def _change_state(self, obj: ActionableObject, state: str):
-        if obj.state != state:
-            obj.edit(state=state)
-            obj.update()
-        LOG.info(f"{obj} is now {state}")
-
-    # TODO(aznashwan): make it take one single match.
-    def run_post_action_for_matches(
-            self, obj: ActionableObject, match_sets: list[list[dict]]):
-        if not isinstance(obj, ActionableObject):
-            LOG.warn(
-                f"{self}.run_post_action_for_matches() called on non-actionable "
-                f"object {obj} ({type(obj)})")
-            return
-
-        # HACK(aznashwan): early return for debugging.
-
-        triggers = []
-        for match_set in match_sets:
-            for match in match_set:
-                try:
-                    action = self._action_format.format(**match)
-                    comment = None
-                    if self._with_comment_format:
-                        comment = self._with_comment_format.format(**match)
-                    triggers.append((action, comment))
-                except Exception as ex:
-                    msg = (
-                        f"Failed to format action params '{self}', "
-                        f"'{self._action_format=}', or '{self._with_comment_format=}'. "
-                        f"Selector match value were: {match}: {ex}")
-                    LOG.error(msg)
-                    continue
-        LOG.info(f"{self}: trigger matches for object {obj} were: {triggers}")
-
-        if triggers:
-            actions = {t[0]: t for t in triggers}
-            if len(actions) > 1:
-                raise ValueError(
-                    f"{self}: multiple actions ({actions}) triggered by matches: "
-                    f"{match_sets}")
-            action = list(actions.keys())[0]
-            comments = {t[1] for t in  triggers}
-
-            for comment in comments:
-                self._add_comment(obj, comment)
-
-            state = ""
-            match action:
-                case "close":
-                    state = "closed"
-                case "open":
-                    state = "open"
-                case other:
-                    raise ValueError(
-                        f"{self}: unsupported action '{other}")
-            self._change_state(obj, state)
+    def get_post_labelling_comment(self, match: MatchResult) -> str:
+        return expr.format_string_with_expressions(
+            self._comment_format, match)

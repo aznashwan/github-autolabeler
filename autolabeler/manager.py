@@ -17,6 +17,7 @@ import logging
 from github import Github
 from github.Issue import Issue
 from github.PullRequest import PullRequest
+from github.Repository import Repository
 
 from autolabeler import labelers
 from autolabeler.labelers import LabelParams
@@ -97,6 +98,9 @@ class LabelsManager():
                 raise ValueError(
                     f"Unsupported target type '{other}'. Must be one of: {accepted}")
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self._target_str}')"
+
     def generate_labels(self) -> list[LabelParams]:
         """ Generates labels based on the provided rules for the target. """
         labels = []
@@ -106,17 +110,68 @@ class LabelsManager():
                     labeler, self._labelling_target.get_target_handle()))  # pyright: ignore
         return labels
 
-    def sync_labels(self) -> list[LabelParams]:
+    def sync_labels(self, remove_obsolete=True) -> list[LabelParams]:
         """ Applies all labels to the target, updating them if need be. """
-        labels = self.generate_labels()
-        LOG.info(f"Applying following labels to {self._target_str}: {labels}")
-        self._labelling_target.set_labels(labels)
-        return labels
+        new_labels = self.generate_labels()
 
-    def run_post_labelling_actions(self):
-        for labeler in self._labelers:
-            labeler.run_post_labelling_actions(
-                self._labelling_target.get_target_handle())  # pyright: ignore
+        if remove_obsolete:
+            existing = {l.name: l for l in self._labelling_target.get_labels()}
+            to_add = {l.name for l in new_labels}
+            to_delete = list(set(existing) - to_add)
+
+            if to_delete and isinstance(self._labelling_target.get_target_handle(), Repository):
+                raise NotImplementedError(
+                    "Auto-removing obsoltele labels on Repositories as a whole "
+                    "requires cross-referencing all PRs/Issues and is thus "
+                    "unfeasible. If really needed, delete all labels on your "
+                    "repo and re-run the labeler in a loop on all PRs/Issues. "
+                    "Alternatively, you could manually define/remove these "
+                    f"following undefined/auto-generated labels: {to_delete}")
+
+            self._labelling_target.remove_labels(to_delete)
+            LOG.info(
+                f"Removing following labels from {self._target_str}: {to_delete}")
+
+        LOG.info(f"Applying following labels to {self._target_str}: {new_labels}")
+        self._labelling_target.set_labels(new_labels)
+        return new_labels
+
+    def _add_comments_for_labels(self, labels: list[LabelParams]):
+        comments = {
+            l.post_labelling_comment
+            for l in labels
+            if l.post_labelling_comment}
+
+        for comm in comments:
+            self._labelling_target.add_comment(comm)
+
+        if comments:
+            LOG.info(
+                f"{self}: added following comments to "
+                f"{self._labelling_target}: {comments}")
+
+    def run_post_actions_for_labels(self, labels: list[LabelParams]):
+        _ = labels
+
+        actions = {}
+        for label in labels:
+            action = label.post_labelling_action
+            if action:
+                actions[action] = actions.get(action, []).append(label)
+
+        if len(actions) > 1:
+            raise Exception(
+                f"Label definitions dictate multiple conflicting actions "
+                f"on target {self._labelling_target}: {actions}")
+
+        if not actions:
+            LOG.info(
+                f"{self}.run_post_actions_for_labels(): No post-labelling "
+                f"action defined in labels: {labels}")
+
+        self._add_comments_for_labels(labels)
+        for action in actions:
+            self._labelling_target.perform_action(action)
 
     def remove_undefined(self):
         """ Deletes all labels which are not defined in the config from the target. """

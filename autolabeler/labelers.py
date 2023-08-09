@@ -16,7 +16,6 @@ import abc
 import dataclasses
 import itertools
 import logging
-import re
 import traceback
 from typing import Self
 
@@ -25,9 +24,10 @@ from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
-from autolabeler import actions, utils
+from autolabeler import actions
 from autolabeler import expr
 from autolabeler import selectors
+from autolabeler import utils
 
 
 LOG = logging.getLogger(__name__)
@@ -38,11 +38,18 @@ class LabelParams:
     name: str
     color: str
     description: str
+    post_labelling_action: actions.PostLabellingAction|None = None
+    post_labelling_comment: str|None = None
 
-    def __init__(self, name: str, color: str, description: str):
+    def __init__(
+            self, name: str, color: str, description: str,
+            post_labelling_comment: str|None=None,
+            post_labelling_action: actions.PostLabellingAction|None=None):
         self.name = name
         self.color = color
         self.description = description.strip()
+        self.post_labelling_action = post_labelling_action
+        self.post_labelling_comment = post_labelling_comment
 
     @classmethod
     def from_label(cls, label: Label) -> Self:
@@ -50,15 +57,30 @@ class LabelParams:
 
     @classmethod
     def from_dict(cls, val: dict[str, str]) -> Self:
+        post_labelling_action = val.get("post_labelling_action")
+        if post_labelling_action:
+            post_labelling_action = actions.PostLabellingAction(
+                post_labelling_action)
         return cls(val.get("name", ""),
                    val.get("color", ""),
-                   val.get("description", ""))
+                   val.get("description", ""),
+                   post_labelling_action=post_labelling_action,  # pyright: ignore
+                   post_labelling_comment=val.get("post_labelling_comment"))
 
-    def to_dict(self) -> dict[str, str]:
-        return {
+    def to_dict(self) -> dict:
+        res = {
             "name": self.name,
             "color": self.color,
             "description": self.description}
+
+        action = self.post_labelling_action
+        if action is not None:
+            action = str(action.value)
+            res["post_labelling_action"] = action
+        if self.post_labelling_comment:
+            res["post_labelling_comment"] = self.post_labelling_comment
+
+        return res
 
     def to_label_creation_params(self) -> dict[str, str]:
         return self.to_dict()
@@ -88,11 +110,6 @@ class BaseLabeler(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         _ = issue
-        return NotImplemented
-
-    @abc.abstractmethod
-    def run_post_labelling_actions(self, obj: Issue|PullRequest):
-        _ = obj
         return NotImplemented
 
 
@@ -180,23 +197,6 @@ class SelectorLabeler(BaseLabeler):
             raise ex.__class__(
                 f"Failed to run statement '{statement}': {ex}") from ex
 
-    def _format_label_string(self, string: str, selector_matches: dict) -> str:
-        label_format_group_re = r"\{([^\}]+)\}"
-        regex = re.compile(label_format_group_re)
-        result = ""
-        search_pos = 0
-        while True:
-            match = regex.search(string, pos=search_pos)
-            if not match:
-                return f"{result}{string[search_pos:]}"
-            result = f"{result}{string[search_pos:match.start()]}"
-
-            statement = match.group(0)
-            expr_res = self._run_statement(
-                statement[1:-1], selector_matches)
-            result = f"{result}{expr_res}"
-            search_pos = match.end()
-
     def _get_labels_for_selector_matches(
             self,
             selector_matches: dict[str, list[selectors.MatchResult]]
@@ -229,9 +229,8 @@ class SelectorLabeler(BaseLabeler):
                 f"{self}._get_labels_for_selector_matches(): attempting to format "
                 f"with selectors match values: {match_dict}")
             try:
-                name = self._format_label_string(
-                    self._name, match_dict)
-                description = self._format_label_string(
+                name = expr.format_string_with_expressions(self._name, match_dict)
+                description = expr.format_string_with_expressions(
                     self._description, match_dict)
                 if self._condition:
                     condition_result = self._run_statement(
@@ -242,10 +241,19 @@ class SelectorLabeler(BaseLabeler):
                             f"failed with {condition_result} for match set: "
                             f"{match_set}")
                         continue
-                new = LabelParams(name, self._color, description)
+                post_action = None
+                post_comment = None
+                if self._actioner:
+                    matchres = selectors.MatchResult(match_dict)
+                    post_action = self._actioner.get_post_labelling_action(matchres)
+                    post_comment = self._actioner.get_post_labelling_comment(matchres)
+                new = LabelParams(
+                    name, self._color, description,
+                    post_labelling_action=post_action,
+                    post_labelling_comment=post_comment)
             except NameError as e:
                 LOG.error(
-                    f"{self}: skipping error formatting label params {e}"
+                    f"{self}: skipping error formatting label params: {e}"
                     f"{traceback.format_exc()}")
             if not new:
                 continue
@@ -263,13 +271,13 @@ class SelectorLabeler(BaseLabeler):
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         # If this a simple label with a static name, it always applies to the repo.
         try:
-            name = self._format_label_string(self._name, {})
-            desc = self._format_label_string(self._description, {})
+            name = expr.format_string_with_expressions(self._name, {})
+            desc = expr.format_string_with_expressions(self._description, {})
             return [LabelParams(name, self._color, desc)]
         except Exception as ex:
             LOG.debug(
                 f"{self}.get_labels_for_repo({repo}): failed to format "
-                "label name/description. Running selectors.")
+                f"label name/description. Running selectors: {ex}")
             # Else, we must run and generate the selectors:
             return self._get_labels_for_selector_matches(
                 self._run_selectors(repo))
@@ -279,6 +287,9 @@ class SelectorLabeler(BaseLabeler):
         # NOTE(aznashwan): this prevents static labellers with no selectors
         # being from applied to all PRs/Issues.
         if not self._selectors:
+            LOG.warning(
+                f"{self}._get_nonstatic_labels({obj}) has no selectors "
+                "no non-static labels to return.")
             return []
 
         return self._get_labels_for_selector_matches(
@@ -289,13 +300,6 @@ class SelectorLabeler(BaseLabeler):
 
     def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
         return self._get_nonstatic_labels(issue)
-
-    def run_post_labelling_actions(self, obj: Issue|PullRequest):
-        if not self._actioner:
-            return
-
-        selector_matches = self._run_selectors(obj)
-        self._actioner.run_post_action_for_matches(obj, selector_matches)
 
 
 def load_labelers_from_config(

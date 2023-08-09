@@ -110,7 +110,12 @@ def main_with_args(argv: list[str]) -> list[dict]:
         case "sync":
             labels = label_manager.sync_labels()
             if args.run_post_labelling_actions:
-                label_manager.run_post_labelling_actions()
+                label_manager.run_post_actions_for_labels(labels)
+            else:
+                # NOTE(aznashwan): if not performing an action, remove their refs.
+                for l in labels:
+                    l.post_labelling_action = None
+                    l.post_labelling_comment = None
         case "purge":
             raise NotImplementedError("no purging yet")
         case other:

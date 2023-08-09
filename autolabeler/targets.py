@@ -21,6 +21,7 @@ from github.Label import Label
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
+from autolabeler.actions import PostLabellingAction
 from autolabeler.labelers import LabelParams
 
 
@@ -45,6 +46,17 @@ class BaseLabelsTarget(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
+    def perform_action(self, action: PostLabellingAction) -> bool:
+        """ Performs the given action or returns False if already in desired state. """
+        _ = action 
+        return NotImplemented
+
+    @abc.abstractmethod
+    def add_comment(self, comment: str):
+        _ = comment
+        return NotImplemented
+
+    @abc.abstractmethod
     def get_target_handle(self):
         return NotImplemented
 
@@ -63,11 +75,20 @@ class RepoLabelsTarget(BaseLabelsTarget):
         self._name = repo_name
         self._repo = client.get_repo(f"{repo_user}/{repo_name}")
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self._user}/{self._name}')"
+
     def get_target_handle(self):
         return self._repo
 
     def get_labels(self) -> list[LabelParams]:
         return [LabelParams.from_label(l) for l in self._repo.get_labels()]
+
+    def perform_action(self, action: PostLabellingAction) -> bool:
+        raise Exception(f"{self}: Cannot perform '{action}' on Repository.")
+
+    def add_comment(self, comment: str):
+        raise Exception(f"{self}: Cannot comment on Repository: {comment}")
 
     def set_labels(self, labels: list[LabelParams]):
         """ Creates or updates label defs on repo. """
@@ -134,6 +155,9 @@ class ObjectLabellingTarget(BaseLabelsTarget):
         self._item_id = repo_item_id
         self._target_obj = self._get_target_obj()
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self._get_target_resource_path()}')"
+
     def get_target_handle(self):
         return self._target_obj
 
@@ -183,8 +207,8 @@ class ObjectLabellingTarget(BaseLabelsTarget):
             if label.name in existing_labels_map:
                 elabel = LabelParams.from_label(existing_labels_map[label.name])
                 if label != elabel:
-                    raise Exception(
-                        f"Found conflicting label definition for {label} while "
+                    LOG.warning(
+                        f"Found mismatched label definition for {label} while "
                         f"applying to {self._target_obj}: {elabel}")
             else:
                 missing.append(label)
@@ -198,8 +222,36 @@ class ObjectLabellingTarget(BaseLabelsTarget):
         # NOTE: refetch all repo labels:
         return [l for l in repo.get_labels()]
 
+    def _change_state(self, state: str) -> bool:
+        """ Returns whether the state needed to be changed or not. """
+        current = self._target_obj.state
+        if current != state:
+            self._target_obj.edit(state=state)
+            LOG.info(f"{self}: transitioning from {current} to {state}")
+            self._target_obj.update()
+            return True
+        LOG.info(f"{self._target_obj} is now {state}")
+        return False
+
     def get_labels(self) -> list[LabelParams]:
         return [LabelParams.from_label(l) for l in self._target_obj.get_labels()]
+
+    def perform_action(self, action: PostLabellingAction) -> bool:
+        match action:
+            case PostLabellingAction.OPEN:
+                return self._change_state('open')
+            case PostLabellingAction.CLOSE:
+                return self._change_state('closed')
+            case other:
+                raise NotImplementedError(
+                    f"{self}.perform_action(): unsupported action: '{other}'")
+
+    def add_comment(self, comment: str):
+        obj = self._target_obj
+        if isinstance(self._target_obj, PullRequest):
+            obj = self._target_obj.as_issue()
+
+        obj.create_comment(comment)  # pyright: ignore
 
     def set_labels(self, labels: list[LabelParams]):
         label_objects_map = {l.name: l for l in self._ensure_repo_labels_exist(labels)}
@@ -220,8 +272,8 @@ class ObjectLabellingTarget(BaseLabelsTarget):
 
     def remove_labels(self, labels: list[str]):
         existing_labels_map = {l.name: l for l in self._target_obj.get_labels()}
-
         for label in labels:
             label_obj = existing_labels_map.get(label)
             if label_obj:
                 label_obj.delete()
+                LOG.info(f"Deleted label: {label_obj}")

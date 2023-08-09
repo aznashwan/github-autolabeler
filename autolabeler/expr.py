@@ -16,6 +16,43 @@
 
 
 import ast
+import logging
+import re
+
+
+LOG = logging.getLogger(__name__)
+
+FORMAT_GROUP_REGEX = re.compile(r"\{([^\}]+)\}")
+
+
+def format_string_with_expressions(string: str, variables: dict) -> str:
+    """ Runs all expressions in formatted strings, calls str() on their
+    results, and formats them back into the original string.
+
+    E.g.: "this is a { var.field } format".format({"var": {"field": "example"}})
+    """
+    result = ""
+    search_pos = 0
+    while True:
+        match = FORMAT_GROUP_REGEX.search(string, pos=search_pos)
+        if not match:
+            result = f"{result}{string[search_pos:]}"
+            break
+        result = f"{result}{string[search_pos:match.start()]}"
+
+        statement = match.group(0)[1:-1].strip()  # strip braces
+        check_string_expression(statement, variables)
+        try:
+            expr_res = evaluate_string_expression(statement, variables)
+        except (NameError, SyntaxError) as ex:
+            raise ex.__class__(
+                f"Failed to run statement '{statement}' from format '{string}': "
+                f"{ex}") from ex
+
+        result = f"{result}{expr_res}"
+        search_pos = match.end()
+
+    return result
 
 
 def evaluate_string_expression(
