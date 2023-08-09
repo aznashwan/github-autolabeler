@@ -12,8 +12,8 @@ one-at-a-time:
     # the per-file individual diffs as `diff.files[filename]`.
     diff:
       min: 0
-  if: "'files' in diff and diff.files[files.name_regex.match].total > 1"
+  if: "diff.files[files.name_regex.match].total > 1"
   action:
     perform: close
-    comment: You can only modify this file { diff.min } lines at a time.
+    comment: You can only modify { [files.name_regex.match } at most { diff.min } lines at a time.
 

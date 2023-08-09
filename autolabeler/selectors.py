@@ -160,9 +160,10 @@ class BaseRegexSelector(Selector):
         res = []
         for item in self._get_items_to_match(obj):
             matches = {}
+            string = item['string']
             for regex in self._regexes:
                 match = _get_match_groups(
-                    regex, item['string'],
+                    regex, string,
                     case_insensitive=self._case_insensitive)
 
                 meta = item.get('meta')
@@ -171,17 +172,19 @@ class BaseRegexSelector(Selector):
 
                 matches[regex] = match
 
-            if len(matches) != len(self._regexes):
+            if any(m is None for m in matches.values()):
                 LOG.debug(
                     f"{self}.match({obj}): one or more regexes failed to "
-                    f"match string {item}: {matches}")
+                    f"match string '{string}': {matches}")
                 continue
 
+            first = matches[self._regexes[0]]
             new = {
                 "case_insensitive": self._case_insensitive,
                 "full": item,
-                "match": matches[self._regexes[0]]["match"],
-                "groups": matches[self._regexes[0]]["groups"]}
+                "match": first["match"],
+                "groups": first["groups"]}
+
             for i, r in enumerate(matches):
                 m = matches[r]
                 new.update({
@@ -215,7 +218,7 @@ class TitleRegexSelector(BaseRegexSelector):
             return []
 
         return [{
-            "string": obj.title,
+            "string": obj.title or "NOTITLE",
             "meta": {
                 "author": obj.user.login,
                 "created_at": obj.created_at,
@@ -247,7 +250,7 @@ class DescriptionRegexSelector(BaseRegexSelector):
             return []
 
         return [{
-            "string": obj.body,
+            "string": obj.body or "NODESCRIPTION",
             "meta": {
                 "author": obj.user.login,
                 "created_at": obj.created_at,
@@ -351,7 +354,7 @@ class BaseCommentsRegexSelector(BaseRegexSelector):
                     continue
 
             res.append({
-                "string": comm.body,
+                "string": comm.body or "NOBODY",
                 "meta": {
                     "id": comm.id,
                     "user": comm.user.login,

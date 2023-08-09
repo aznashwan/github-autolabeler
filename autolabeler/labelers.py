@@ -147,7 +147,7 @@ class SelectorLabeler(BaseLabeler):
         for sname, sbody in sels_defs.items():
             try:
                 scls = selectors.get_selector_cls(sname, raise_if_missing=True)
-                sels.append(scls.from_dict(sbody))
+                sels.append(scls.from_val(sbody))
             except Exception as ex:
                 raise ValueError(
                     f"Failed to load selector '{sname}' from "
@@ -263,10 +263,13 @@ class SelectorLabeler(BaseLabeler):
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         # If this a simple label with a static name, it always applies to the repo.
         try:
-            self._name.format()
-            self._description.format()
-            return [LabelParams(self._name, self._color, self._description)]
-        except KeyError:
+            name = self._format_label_string(self._name, {})
+            desc = self._format_label_string(self._description, {})
+            return [LabelParams(name, self._color, desc)]
+        except Exception as ex:
+            LOG.debug(
+                f"{self}.get_labels_for_repo({repo}): failed to format "
+                "label name/description. Running selectors.")
             # Else, we must run and generate the selectors:
             return self._get_labels_for_selector_matches(
                 self._run_selectors(repo))

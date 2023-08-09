@@ -1,0 +1,31 @@
+# This will define a label named "bug" which will automatically get applied
+# to Issues/PRs whose various aspects match one of the selected regexes.
+
+bug:
+  # This will define a label named 'bug/speculative' which will trigger
+  # if an issue/PR's title or description contain obvious bug references.
+  speculative:
+    color: yellow
+    description: This Issue/PR might represent a bug.
+    # NOTE: this will only apply the label if BOTH selectors matched.
+    if: title and description
+    selectors:
+      # NOTE: the 'title' and 'description' selectors which match the
+      # given regexes within the title and description of the issue/PR.
+      title: "(issue|bug|fix|problem|failure|error)"
+      description: "(issue|bug|fix|problem|failure|error)"
+
+  # This will define a label named 'bug/confirmed' which will trigger if
+  # an issue/PR has more user comments confirming it, or was
+  # manually confirmed by a maintainer.
+  confirmed:
+    color: red
+    description: This Issue/PR represents a confirmed bug.
+      # if: maintainer_comments or len(selectors.comments) > 10
+    selectors:
+      # labels: ["bug/speculative"]
+      comments:
+        - "confirmed"
+        - "reproduced"
+        - "same"
+      maintainer_comments: "^(/label-me-as bug)$"

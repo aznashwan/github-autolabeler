@@ -37,10 +37,6 @@ bug:
   color: red
   description: This label signifies the Issue/PR is about a bug.
   selectors:
-    regex:
-      # This allows for case insensitive searches. (default is false)
-      case_insensitive: true
-
       # This will make the label be applied to PRs/Issues whose titles/descriptions
       # match the given regex. (in this case, some simple keywords)
       title: "(issue|bug|fix|problem|failure|error)"
@@ -48,18 +44,16 @@ bug:
 
       # This will make the label applied to PRs/Issues where anyone comments
       # the given magic string on a single line within the comment.
-      comment: "^(/label-me-as bug)$"
+      comments: "(confirm|reproduced)"
       # Only allows maintainers to add this label via comment. (default is true)
-      maintainer_comments_only: false
+      maintainer_comments: "^(/label-me-as bug)$"
 
 
-manual-{regex.comment.groups[1]}:
+manual-{maintainer_comments.groups[1]}:
   color: green
-  description: "This label was defined through a maintainer comment with: {regex.comment.match}"
+  description: "This label was defined through a maintainer comment with: {maintainer_comments.match}"
   selectors:
-    regex:
-      maintainer_comments_only: true
-      comment: "^(/label-me-as ([\\-a-z]+))$"
+      maintainer_comments: "^(/label-me-as ([\\-a-z]+))$"
 
 
 # This will define two labels named "pr-size-measure/{small,large}" that will
