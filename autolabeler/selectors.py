@@ -20,7 +20,6 @@ from typing import Self
 
 from github.ContentFile import ContentFile
 from github.Issue import Issue
-from github.IssueComment import IssueComment
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
@@ -71,8 +70,10 @@ class MatchResult(dict):
 class Selector(metaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
-    def from_dict(cls, val: dict) -> Self:
+    def from_val(cls, val: dict, extra: object|None=None) -> Self:
+        """ Load the selector from a value. """
         _ = val
+        _ = extra
         return NotImplemented
 
     @abc.abstractclassmethod
@@ -80,153 +81,304 @@ class Selector(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def match(self, obj: object, file_cache: list[ContentFile]=[]) -> list[MatchResult]:
+    def match(self, obj: object) -> list[MatchResult]:
         """ Returns a list of matches for the Github object. """
         return NotImplemented
 
 
-class RegexSelector(Selector):
-    """ Selects Issues/PRs based on regexes of their title/comments. """
+class BaseRegexSelector(Selector):
+    """ Returns a match based on a provided regexes. """
 
-    def __init__(self,
-                 re_title: str="", re_description: str="",
-                 re_comments: str="", maintainer_comments_only: bool=True,
-                 case_insensitive: bool=False):
-        self._re_title = re_title
-        self._re_description = re_description
-        self._re_comments = re_comments
-        self._re_maintainer_comments = maintainer_comments_only
+    def __init__(self, regexes: list[str], case_insensitive: bool=False):
+        self._regexes = regexes
         self._case_insensitive = case_insensitive
 
-    def __repr__(self) -> str:
-        cls = self.__class__.__name__
-        title = self._re_title
-        desc = self._re_description[:16]
-        comments = self._re_comments
-        maintainers_only = self._re_maintainer_comments
-        case_insensitive = self._case_insensitive
-        return (
-            f"{cls}({title=}, {desc=}, {comments=}, {maintainers_only=}, "
-            f"{case_insensitive=})")
-
     @classmethod
-    def get_selector_name(cls):
-        return "regex"
-
-    @classmethod
-    def from_dict(cls, val: dict) -> Self:
-        """ Supports dict with following keys:
-
-        case_insensitive: bool,
-        title: "<regex for title>",
-        description: "<regex for description>",
-        comment: "<regex for comments>",
-        maintainer_comments_only: bool,
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        """ Accepts:
+        str: the regex
+        list: list of regexes
         """
-        supported_keys = [
-            "case_insensitive", "title", "description",
-            "comments", "maintainer_comments", "maintainer_comments_only"]
-        if not any(k in val for k in supported_keys):
-            raise ValueError(
-                f"FileRegexSelector requires at least one regex key "
-                f"({supported_keys}). Got {val}")
+        # TODO(aznashwan): support explicit dict loading too.
+        if not extra:
+            extra = {}
+        regexes = [".*"]
+        match val:
+            case val if isinstance(val, str):
+                regexes = [val]
+            case val if isinstance(val, list):
+                not_strings = [v for v in val if not isinstance(v, str)]
+                if not_strings:
+                    raise TypeError(
+                        f"{cls.__name__}.from_val({val}): unacceptable value "
+                        "of elements in list definition. All items must "
+                        f"str. Non-str items were: {not_strings}")
+                regexes = val
+            case other:
+                raise TypeError(
+                    f"{cls.__name__}.from_val({other}): unacceptable value "
+                    f"of type {type(other)}: must be str or list[str].")
 
-        kwargs = {
-            "case_insensitive": val.get("case_insensitive", False),
-            "re_title": val.get("title", ""),
-            "re_description": val.get("description", ""),
-            "re_comments": val.get("comment", ""),
-            "maintainer_comments_only": val.get(
-                "maintainer_comments_only", True)}
+        return cls(
+            regexes=regexes,
+            case_insensitive=extra.get('case_insensitive', False))
 
-        return cls(**kwargs)
+    def __repr__(self) -> str:
+        regexes = self._regexes
+        case_insensitive = self._case_insensitive
+        return f"{self.__class__.__name__}({regexes=}, {case_insensitive=})"
 
-    def _get_title_description_matches(self, obj: PullRequest|Issue) -> dict:
-        res = {}
+    @abc.abstractmethod
+    def _get_items_to_match(selfi, obj: object) -> list[dict]:
+        """ Should return a list of dicts of the form: [{
+            "string": "<the string to match>",
+            "meta": {
+                "kvps": "to attach to the match"
+            }
+        }]
+        """
+        raise NotImplementedError()
 
-        if self._re_title and obj.title:
-            match = _get_match_groups(
-                self._re_title, obj.title, case_insensitive=self._case_insensitive)
-            if match:
-                res["title"] = match
+    def match(self, obj: object) -> list[MatchResult]:
+        """ Returns all items based on the implementation of '_get_items_to_match'
+        which match ALL the regexes.
 
-        if self._re_description and obj.body:
-            match = _get_match_groups(
-                self._re_description, obj.body, case_insensitive=self._case_insensitive)
-            if match:
-                res["description"] = match
-
-        return res
-
-    def _get_repo_for_target_object(self, obj: Issue|PullRequest) -> Repository:
-        if isinstance(obj, Issue):
-            return obj.repository
-        return obj.as_issue().repository
-
-    def _check_comment_role(
-            self, repo: Repository, comment: IssueComment, role: str) -> bool:
-        return repo.get_collaborator_permission(comment.user) == role
-
-    def _get_comment_matches(self, obj: Issue|PullRequest) -> list[dict]:
-        if not self._re_comments:
+        Returns list of matches of the form: [{
+            "case_insensitive": "<case_insensitive setting>",
+            "full": "<full string which matched ALL regexes>",
+            "match": "<match part for the first regex (same as match0)>",
+            "matchN": "<match part for the Nth regex starting from 0>",
+            "groups": ["list of", "match groups for the first regex (~= groups0)"],
+            "groupsN": ["list of", "match groups for the Nth regex"],
+            "<metafield>": "arbitrary metafields returned by _get_items_to_match."
+        }]
+        """
+        if not self._regexes:
+            LOG.warning(f"{self}.match({obj}): no regexes defined.")
             return []
 
+        res = []
+        for item in self._get_items_to_match(obj):
+            matches = {}
+            for regex in self._regexes:
+                match = _get_match_groups(
+                    regex, item['string'],
+                    case_insensitive=self._case_insensitive)
+
+                meta = item.get('meta')
+                if match and meta:
+                    match.update(meta)
+
+                matches[regex] = match
+
+            if len(matches) != len(self._regexes):
+                LOG.debug(
+                    f"{self}.match({obj}): one or more regexes failed to "
+                    f"match string {item}: {matches}")
+                continue
+
+            new = {
+                "case_insensitive": self._case_insensitive,
+                "full": item,
+                "match": matches[self._regexes[0]]["match"],
+                "groups": matches[self._regexes[0]]["groups"]}
+            for i, r in enumerate(matches):
+                m = matches[r]
+                new.update({
+                    f"match{i}": m["match"],
+                    f"groups{i}": matches[r]["groups"]})
+            res.append(new)
+
+        return [MatchResult(m) for m in res]
+
+
+class TitleRegexSelector(BaseRegexSelector):
+    """ Checks the title of issues/PRs based on the given regex.
+
+    Returns at most a single match of the form: [{
+        "author": "<ID of user who made the PR/issue.>",
+        "created_at": <Python datetime object when the Issue/PR was created>
+        "all": "match results returned by BaseRegexSelector.match()..."
+    }]
+    """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "title"
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest|Issue):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.title,
+            "meta": {
+                "author": obj.user.login,
+                "created_at": obj.created_at,
+            }
+        }]
+
+
+class DescriptionRegexSelector(BaseRegexSelector):
+
+    """ Checks the description of issues/PRs based on the given regex.
+
+    Returns at most a single match of the form: [{
+        "author": "<ID of user who made the PR/issue.>",
+        "created_at": <Python datetime object when the Issue/PR was created>
+        "all": "match results returned by BaseRegexSelector.match()..."
+    }]
+    """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "description"
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest|Issue):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.body,
+            "meta": {
+                "author": obj.user.login,
+                "created_at": obj.created_at,
+            }
+        }]
+
+
+class BaseCommentsRegexSelector(BaseRegexSelector):
+
+    """ Checks the comments of issues/PRs based on the given regex and factors.
+
+    Returns one match per comment of the form: [{
+        "id": "<ID of the comment>",
+        "user": "<ID of user who made the comment.>",
+        "user_role": "<Role of the user on the repo>",
+        "created_at": <Python datetime object when the Issue/PR was created>,
+        "all": "match results returned by BaseRegexSelector.match()..."
+    }]
+    """
+
+    __ROLES = []
+
+    def __init__(
+            self, regexes: list[str],
+            case_insensitive: bool=False,
+            user_roles_cache: dict|None=None):
+        super().__init__(regexes=regexes, case_insensitive=case_insensitive)
+        self._user_roles_cache = user_roles_cache or {}
+
+    @classmethod
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        """ Accepts:
+        str: the regex
+        list: list of regexes
+        """
+        # TODO(aznashwan): support explicit dict loading too.
+        if not extra:
+            extra = {}
+        regexes = [".*"]
+        match val:
+            case val if isinstance(val, str):
+                regexes = [val]
+            case val if isinstance(val, list):
+                not_strings = [v for v in val if not isinstance(v, str)]
+                if not_strings:
+                    raise TypeError(
+                        f"{cls.__name__}.from_val({val}): unacceptable value "
+                        "of elements in list definition. All items must "
+                        f"str. Non-str items were: {not_strings}")
+                regexes = val
+            case other:
+                raise TypeError(
+                    f"{cls.__name__}.from_val({other}): unacceptable value "
+                    f"of type {type(other)}: must be str or list[str].")
+
+        return cls(
+            regexes=regexes,
+            case_insensitive=extra.get('case_insensitive', False))
+
+    def __repr__(self) -> str:
+        regexes = self._regexes
+        case_insensitive = self._case_insensitive
+        user_roles = self.__ROLES
+        return (
+            f"{self.__class__.__name__}("
+            f"{regexes=}, {case_insensitive=}, {user_roles=})")
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest|Issue):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        repo = None
         comments = []
         if isinstance(obj, Issue):
+            repo = obj.repository
             comments = [c for c in obj.get_comments()]
         else:
             # TODO(aznashwan): handle Review Comments too.
-            comments = [c for c in obj.as_issue().get_comments()]
+            as_issue = obj.as_issue()
+            repo = as_issue.repository
+            comments = [c for c in as_issue.get_comments()]
 
         res = []
-        repo = self._get_repo_for_target_object(obj)
         for comm in comments:
-            if not self._check_comment_role(repo, comm, 'admin'):
-                LOG.debug(
-                    f"Skipping non-maintainer comment {comm.id} on {obj}.")
-                continue
-            match = _get_match_groups(
-                self._re_comments, comm.body,
-                case_insensitive=self._case_insensitive)
-            if match:
-                res.append(match)
+            role = ""
+            if self.__ROLES:
+                uid = comm.user.login
+                role = self._user_roles_cache.get(uid)
+                if not role:
+                    role = repo.get_collaborator_permission(uid)
+                    self._user_roles_cache[uid] = role
+
+                if role not in self.__ROLES:
+                    LOG.debug(
+                        f"Skipping comment {comm.id} as author {uid} with "
+                        f"role {role} is not a {self.__ROLES}")
+                    continue
+
+            res.append({
+                "string": comm.body,
+                "meta": {
+                    "id": comm.id,
+                    "user": comm.user.login,
+                    "user_role": role,
+                    "created_at": comm.created_at}})
 
         return res
 
-    def match(self, obj: object, _: list[ContentFile]=[]) -> list[MatchResult]:
-        """ Matches comments on Issues/PRs.
 
-        Returns list of matches of the form: {
-            "case_insensitive": "<case_insensitive setting>",
-            "maintainer_comments_only": "<maintainer comment flag>",
-            "title": {
-                full: "<full title str>",
-                match: "<title part that matched>",
-                groups: ["list", "of", "match", "groups"],
-            },
-            "description": { <same regex math structure as title> },
-            "comment": { <same regex math structure as title> },
-        }
-        """
-        # NOTE(aznashwan): Only Issues/PRs have the concept of comments.
-        if not isinstance(obj, (Issue, PullRequest)):
-            LOG.warn(
-                f"RegexSelector got unsupported object type {type(obj)}: {obj}")
-            return []
+class ContributorCommentsRegexSelector(BaseCommentsRegexSelector):
+    """ Matches comments from any contributor on Issues/PRs. """
 
-        res = []
-        tdms = self._get_title_description_matches(obj)
-        comms = self._get_comment_matches(obj)
-        # Update every comment match result with the title/description matches.
-        for comment_match in comms:
-            entry = {"comment": comment_match}
-            entry.update(tdms)
-            res.append(entry)
+    __ROLES = []  # pyright: ignore
 
-        if not res and tdms:
-            res = [tdms]
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "comments"
 
-        return [MatchResult(m) for m in res]
+
+class MaintainerCommentsRegexSelector(BaseCommentsRegexSelector):
+    """ Matches comments from any maintainers on Issues/PRs. """
+
+    __ROLES = ['admin']  # pyright: ignore
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "maintainer_comments"
 
 
 class FilesSelector(Selector):
@@ -246,7 +398,7 @@ class FilesSelector(Selector):
         return "files"
 
     @classmethod
-    def from_dict(cls, val: dict) -> Self:
+    def from_val(cls, val: dict) -> Self:
         supported_keys = ["name_regex", "type"]
         if not any(k in val for k in supported_keys):
             raise ValueError(
@@ -259,8 +411,8 @@ class FilesSelector(Selector):
 
         return cls(**kwargs)
 
-    def match(self, obj: Repository|PullRequest,
-              file_cache: list[str]=[]) -> list[MatchResult]:
+    def match(self, obj: Repository|PullRequest) -> list[MatchResult]:
+        # TODO(aznashwan): make it return list of file objects.
         """ Returns list of results containing the following fields: {
             name_regex: {
                 full: "full/path/to/file",
@@ -279,10 +431,8 @@ class FilesSelector(Selector):
                 f"{self.__class__}.match() got unsupported object type {type(obj)}: {obj}")
             return []
 
-        all_files = file_cache
-        if not all_files:
-            lister = FileLister(obj)
-            all_files = lister.list_file_paths()
+        lister = FileLister(obj)
+        all_files = lister.list_file_paths()
 
         res = []
         for path in all_files:
@@ -332,18 +482,17 @@ class DiffSelector(Selector):
         return "diff"
 
     @classmethod
-    def from_dict(cls, val: dict):
+    def from_val(cls, val: dict):
         supported_keys = ["min",  "max", "type"]
         unsupported_keys = [k for k in val if k not in supported_keys]
         if unsupported_keys:
             raise ValueError(
-                f"{cls}.from_dict() got unsupported keys: {unsupported_keys}")
+                f"{cls}.from_val() got unsupported keys: {unsupported_keys}")
         return cls(
             min=val.get("min"), max=val.get("max"),
             change_type=val.get("type", "total"))
 
-    def match(self, obj: Repository|PullRequest,
-              file_cache: list[str]=[]) -> list[MatchResult]:
+    def match(self, obj: Repository|PullRequest) -> list[MatchResult]:
         """ Returns a single match result of the form: {
             "target_type": "<what 'type' option the selector had set>"
             "min": "<the min parameter or -Inf if not set>",
@@ -362,8 +511,6 @@ class DiffSelector(Selector):
             }
         }
         """
-        _ = file_cache
-
         # NOTE(aznashwan): Only Repositories/PRs have associated files.
         if not isinstance(obj, (PullRequest, Repository)):
             LOG.warn(
@@ -446,9 +593,12 @@ class FileLister():
 
 
 SELECTOR_CLASSES = [
-    RegexSelector,
     FilesSelector,
     DiffSelector,
+    TitleRegexSelector,
+    DescriptionRegexSelector,
+    ContributorCommentsRegexSelector,
+    MaintainerCommentsRegexSelector,
 ]
 
 

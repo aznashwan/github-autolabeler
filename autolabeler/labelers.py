@@ -146,10 +146,8 @@ class SelectorLabeler(BaseLabeler):
         sels_defs = val.get("selectors", {})
         for sname, sbody in sels_defs.items():
             try:
-                # HACK(aznashwan): disable raising for testing.
-                scls = selectors.get_selector_cls(sname, raise_if_missing=False)
-                if scls:
-                    sels.append(scls.from_dict(sbody))
+                scls = selectors.get_selector_cls(sname, raise_if_missing=True)
+                sels.append(scls.from_dict(sbody))
             except Exception as ex:
                 raise ValueError(
                     f"Failed to load selector '{sname}' from "
@@ -246,7 +244,9 @@ class SelectorLabeler(BaseLabeler):
                         continue
                 new = LabelParams(name, self._color, description)
             except NameError as e:
-                LOG.debug(f"{self}: skipping error formatting label params: {e}")
+                LOG.error(
+                    f"{self}: skipping error formatting label params {e}"
+                    f"{traceback.format_exc()}")
             if not new:
                 continue
 
