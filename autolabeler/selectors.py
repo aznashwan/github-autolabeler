@@ -14,6 +14,7 @@
 
 import abc
 import logging
+import math
 import re
 import typing
 from typing import Self
@@ -458,12 +459,16 @@ class FilesSelector(Selector):
 class DiffSelector(Selector):
 
     def __init__(
-            self, min: int|None=None, max: int|None=None,
+            self, min: float|None=None, max: float|None=None,
             change_type: str="total"):
         if min is None and max is None:
             raise ValueError(
                 f"{self.__class__}: at least one of min/max is required.")
+        if not min:
+            min = -math.inf
         self._min = min
+        if not max:
+            max = math.inf
         self._max = max
         supported_change_types = [
             "additions", "deletions", "total", "net"]
@@ -498,8 +503,9 @@ class DiffSelector(Selector):
     def match(self, obj: Repository|PullRequest) -> list[MatchResult]:
         """ Returns a single match result of the form: {
             "target_type": "<what 'type' option the selector had set>"
-            "min": "<the min parameter or -Inf if not set>",
-            "max": "<the max parameter or +Inf if not set>",
+            "min": "<the min parameter or -inf if not set>",
+            "max": "<the max parameter or +inf if not set>",
+            -- NOTE: the below results are only returned for PRs.
             "total": "<total lines changed for the PR>",
             "additions": "<total lines added for the PR>",
             "deletions": "<total deletions for the PR>",
@@ -520,9 +526,7 @@ class DiffSelector(Selector):
                 f"{self.__class__}.match() got unsupported object type {type(obj)}: {obj}")
             return []
 
-        res = {
-            "min": self._min if self._min is not None else "-Inf",
-            "max": self._max if self._max is not None else "+Inf"}
+        res = {"min": self._min, "max": self._max}
         if isinstance(obj, Repository):
             # TODO(aznashwan): ideally pre-define the labels on repos here.
             return [MatchResult(res)]
