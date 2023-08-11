@@ -1,0 +1,47 @@
+# This will define a label which will get applied to PRs/Issues and provide
+# different comments depending on the author's usern handle.
+
+# You can use the magic '__defs__' key anywhere you'd like in order to add
+# custom utility definitions you can then re-use in your conditionals.
+
+author:
+  funny:
+    color: green
+    description: This PR/Issue was openened by an author with a funny username.
+    selectors:
+      # NOTE: an empty 'title' selector will match any PR/Issue title.
+      title:
+    # NOTE: `is_funny()` is defined in the `__defs__` key below!
+    if: is_funny(title.author)
+    action:
+      comment: |
+        Knock knock!
+        Q: Who's there?
+        A: None other than @{ title.author }.
+        Q: Lol.
+
+  double-funny:
+    color: teal
+    description: This PR was made by an author with a REALLY funny username.
+    selectors:
+      title:
+    if: is_funny(title.author, "hwan")
+    action:
+      comment: Lol that one's ever better.
+
+    # NOTE: this '__defs__' is defined within the 'double-funny' labeler
+    # body, not in the 'author' label prefix.
+    __defs__: |
+      # NOTE: this new definition will "shadow" the global one.
+      def is_funny(username: str, added_joke: str) -> bool:
+        # NOTE: the global 'is_funny' is bound at definition time,
+        # so this will NOT recurse infinitely.
+        return is_funny(username) and added_joke in username.lower()
+
+
+__defs__: |
+  THE_JOKE = 'azna'
+
+  def is_funny(username: str) -> bool:
+    global THE_JOKE
+    return THE_JOKE in username.lower()

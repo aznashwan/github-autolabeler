@@ -55,9 +55,9 @@ class OnMatchFormatAction(BasePostLabellingAction):
     """ Returns a simple action and formatted comment based on the given match. """
 
     def __init__(
-            self, perform_action_format: str,
+            self, perform_action_format: str|None=None,
             comment_format: str|None=None):
-        self._action_format = perform_action_format
+        self._action_format = perform_action_format or ""
         self._comment_format = comment_format or ""
 
     def __repr__(self):
@@ -78,26 +78,28 @@ class OnMatchFormatAction(BasePostLabellingAction):
                 f"{cls}.from_dict() got unsupported keys: {unsupported}. "
                 f"Supported keys are: {supported_keys}")
 
-        missing = [k for k in supported_keys if k not in val]
-        if missing:
+        if not val:
             raise ValueError(
-                f"{cls}.from_dict() missing required keys: {missing}. "
-                f"Required keys are: {supported_keys}")
+                f"{cls}.from_dict() missing at least one supported key: {supported_keys}.")
 
         supported_actions = ["open", "close"]
-        action = val["perform"]
-        if action not in supported_actions:
+        action = val.get("perform", None)
+        if action and action not in supported_actions:
             raise ValueError(
                 f"{cls}.from_dict() got unsupported 'perform' action: {action}. "
                 f"Supported actions are: {supported_actions}")
 
-        return cls(action, val["comment"])
+        return cls(perform_action_format=action, comment_format=val["comment"])
 
-    def get_post_labelling_action(self, match: MatchResult) -> PostLabellingAction:
+    def get_post_labelling_action(self, match: MatchResult) -> PostLabellingAction|None:
+        if not self._action_format:
+            return None
         return PostLabellingAction(
             expr.format_string_with_expressions(
                 self._action_format, match))
 
-    def get_post_labelling_comment(self, match: MatchResult) -> str:
+    def get_post_labelling_comment(self, match: MatchResult) -> str|None:
+        if not self._comment_format:
+            return None
         return expr.format_string_with_expressions(
             self._comment_format, match)

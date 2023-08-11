@@ -32,6 +32,9 @@ from autolabeler import utils
 
 LOG = logging.getLogger(__name__)
 
+OPTIONS_MAGIC_KEY = "__opts__"
+DEFINITIONS_MAGIC_KEY = "__defs__"
+
 
 @dataclasses.dataclass
 class LabelParams:
@@ -118,13 +121,17 @@ class SelectorLabeler(BaseLabeler):
                  label_name: str,
                  label_color: str,
                  label_description: str,
-                 selectors: list[selectors.Selector]|None=None,
                  condition: str|None=None,
+                 custom_options: dict|None=None,
+                 custom_definitions: dict|None=None,
+                 selectors_list: list[selectors.Selector]|None=None,
                  actioner: actions.BasePostLabellingAction|None=None):
         self._name = label_name
         self._color = utils.map_color_string(label_color)
         self._description = label_description
-        self._selectors = selectors or []
+        self._custom_options = selectors.MatchResult(custom_options or {})
+        self._custom_definitions = selectors.MatchResult(custom_definitions or {})
+        self._selectors = selectors_list or []
         self._condition = condition
         self._actioner = actioner
 
@@ -138,7 +145,10 @@ class SelectorLabeler(BaseLabeler):
         return f"{cls}({name=}, {color=}, {desc=}, {condition=}, {actioner=})"
 
     @classmethod
-    def from_dict(cls, label_name: str, val: dict) -> Self:
+    def from_dict(
+            cls, label_name: str, val: dict,
+            custom_options: dict|None=None,
+            custom_definitions: dict|None=None) -> Self:
         required_fields = [
             "color", "description"]
         if not type(val) is dict:
@@ -164,7 +174,10 @@ class SelectorLabeler(BaseLabeler):
         for sname, sbody in sels_defs.items():
             try:
                 scls = selectors.get_selector_cls(sname, raise_if_missing=True)
-                sels.append(scls.from_val(sbody))
+                LOG.debug(
+                    f"{cls.__name__}.from_dict(): attempting to load selector "
+                    f"{scls.__name__} from value {val} with options {custom_options}")
+                sels.append(scls.from_val(sbody, extra=custom_options))
             except Exception as ex:
                 raise ValueError(
                     f"Failed to load selector '{sname}' from "
@@ -177,7 +190,9 @@ class SelectorLabeler(BaseLabeler):
 
         return cls(
             label_name, val['color'], val['description'],
-            selectors=sels, actioner=actioner, condition=val.get('if'))
+            selectors_list=sels, actioner=actioner, condition=val.get('if'),
+            custom_options=custom_options,
+            custom_definitions=custom_definitions)
 
     def _run_selectors(self, obj: Issue|PullRequest|Repository) -> dict:
         # overly-drawn-out code for logging purposes:
@@ -195,7 +210,8 @@ class SelectorLabeler(BaseLabeler):
             return expr.evaluate_string_expression(statement, variables)
         except (NameError, SyntaxError) as ex:
             raise ex.__class__(
-                f"Failed to run statement '{statement}': {ex}") from ex
+                f"Failed to run statement '{statement}' with {variables=}: {ex}"
+            ) from ex
 
     def _get_labels_for_selector_matches(
             self,
@@ -224,12 +240,26 @@ class SelectorLabeler(BaseLabeler):
                 selector_matches_index_map[i]: selector_match
                 for i, selector_match in enumerate(match_set)}
 
+            # Add any custom definitions to the match result so it
+            # may be accessed from within format statements:
+            match_dict.update(self._custom_definitions)
+
+            # Add any custom options in the statement:
+            opts_key = 'opts'
+            if opts_key in match_dict:
+                LOG.error(
+                    f"{self}: Skipping definitions key {opts_key} already present in "
+                    f"match result set: {match_dict}")
+            else:
+                match_dict[opts_key] = self._custom_options
+
             new = None
             LOG.debug(
                 f"{self}._get_labels_for_selector_matches(): attempting to format "
                 f"with selectors match values: {match_dict}")
             try:
-                name = expr.format_string_with_expressions(self._name, match_dict)
+                name = expr.format_string_with_expressions(
+                    self._name, match_dict)
                 description = expr.format_string_with_expressions(
                     self._description, match_dict)
                 if self._condition:
@@ -248,12 +278,12 @@ class SelectorLabeler(BaseLabeler):
                     post_action = self._actioner.get_post_labelling_action(matchres)
                     post_comment = self._actioner.get_post_labelling_comment(matchres)
                 new = LabelParams(
-                    name, self._color, description,
+                   name, self._color, description,
                     post_labelling_action=post_action,
                     post_labelling_comment=post_comment)
             except NameError as e:
                 LOG.error(
-                    f"{self}: skipping error formatting label params: {e}"
+                    f"{self}: skipping error formatting label params: {e}\n"
                     f"{traceback.format_exc()}")
             if not new:
                 continue
@@ -271,8 +301,10 @@ class SelectorLabeler(BaseLabeler):
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         # If this a simple label with a static name, it always applies to the repo.
         try:
-            name = expr.format_string_with_expressions(self._name, {})
-            desc = expr.format_string_with_expressions(self._description, {})
+            name = expr.format_string_with_expressions(
+                self._name, self._custom_definitions)
+            desc = expr.format_string_with_expressions(
+                self._description, self._custom_definitions)
             return [LabelParams(name, self._color, desc)]
         except Exception as ex:
             LOG.debug(
@@ -303,12 +335,39 @@ class SelectorLabeler(BaseLabeler):
 
 
 def load_labelers_from_config(
-        config: dict, prefix: str="", separator: str="/") -> list[BaseLabeler]:
+        config: dict, prefix: str="", separator: str="/",
+        custom_options: dict|None=None,
+        custom_definitions: dict|None=None,
+        options_magic_key: str=OPTIONS_MAGIC_KEY,
+        definitions_magic_key: str=DEFINITIONS_MAGIC_KEY) -> list[BaseLabeler]:
+    """ Recursively loads labelers from the given config dict.
+
+    The special magic keys can be repeated within each dict
+    nested dict for "layering" of said config.
+    """
+    if not custom_definitions:
+        custom_definitions = {}
+    if not custom_options:
+        custom_options = {}
+
     if not isinstance(config, dict):
         raise ValueError(
             "Failed to recursively parse config: got to the following "
             "non-mapping object in hopes it would be a labeler definition "
             f"containing a 'color' and 'description' field: {config}")
+
+    # Evaluate and "merge" any added options in this config section.
+    options = config.pop(options_magic_key, {})
+    curr_options = utils.merge_dicts(custom_options, options)
+
+    # Evaluate and "merge" any added definitions in this config section.
+    curr_defs = custom_definitions
+    custom_defs_str = config.pop(definitions_magic_key, "")
+    if custom_defs_str:
+        new_defs = expr.evaluate_string_definitions(
+            custom_defs_str, curr_defs, scrub_imports=True,
+            allowed_import_names=expr.DEFAULT_ALLOWED_IMPORTS)
+        curr_defs = utils.merge_dicts(curr_defs, new_defs)
 
     required_labeler_keys = ['color', 'description']
     labelers = []
@@ -317,10 +376,27 @@ def load_labelers_from_config(
         if prefix:
             name = f"{prefix}{separator}{key}"
         if all(k in val for k in required_labeler_keys):
+            labeler_defs = {k: v for k, v in curr_defs.items()}
+            labeler_defs_str = val.pop(definitions_magic_key, "")
+            if labeler_defs_str:
+                new_defs = expr.evaluate_string_definitions(
+                    labeler_defs_str, labeler_defs, scrub_imports=True,
+                    allowed_import_names=expr.DEFAULT_ALLOWED_IMPORTS)
+                labeler_defs = utils.merge_dicts(labeler_defs, new_defs)
+
+            LOG.debug(
+                f"load_labelers_from_config(): attempting to define labeler "
+                f"with name '{name}' with payload {val} and custom defs: "
+                f"{labeler_defs}")
             labelers.append(
-                SelectorLabeler.from_dict(name, val))
+                SelectorLabeler.from_dict(
+                    name, val,
+                    custom_options=curr_options,
+                    custom_definitions=labeler_defs))
         else:
             labelers.extend(load_labelers_from_config(
-                val, prefix=name, separator=separator))
+                val, prefix=name, separator=separator,
+                custom_options=curr_options,
+                custom_definitions=curr_defs))
 
     return labelers

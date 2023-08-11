@@ -71,7 +71,7 @@ class MatchResult(dict):
 class Selector(metaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
-    def from_val(cls, val: dict, extra: object|None=None) -> Self:
+    def from_val(cls, val: dict, extra: dict|None=None) -> Self:
         """ Load the selector from a value. """
         _ = val
         _ = extra
@@ -97,14 +97,20 @@ class BaseRegexSelector(Selector):
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
         """ Accepts:
+        None: will default to an all-capturing regex. (.*)
         str: the regex
         list: list of regexes
+
+        Extra options queried:
+        case_insensitive: governs regex searching case sensitivity.
         """
         # TODO(aznashwan): support explicit dict loading too.
         if not extra:
             extra = {}
         regexes = [".*"]
         match val:
+            case None:
+                pass
             case val if isinstance(val, str):
                 regexes = [val]
             case val if isinstance(val, list):
@@ -167,7 +173,8 @@ class BaseRegexSelector(Selector):
                     regex, string,
                     case_insensitive=self._case_insensitive)
 
-                meta = item.get('meta')
+                meta = item.get('meta', {})
+                print(f"### {meta}")
                 if match and meta:
                     match.update(meta)
 
@@ -179,12 +186,11 @@ class BaseRegexSelector(Selector):
                     f"match string '{string}': {matches}")
                 continue
 
-            first = matches[self._regexes[0]]
             new = {
                 "case_insensitive": self._case_insensitive,
-                "full": item,
-                "match": first["match"],
-                "groups": first["groups"]}
+                "full": item}
+            first = matches[self._regexes[0]]
+            new.update(first)
 
             for i, r in enumerate(matches):
                 m = matches[r]
@@ -202,7 +208,7 @@ class TitleRegexSelector(BaseRegexSelector):
     Returns at most a single match of the form: [{
         "author": "<ID of user who made the PR/issue.>",
         "created_at": <Python datetime object when the Issue/PR was created>
-        "all": "match results returned by BaseRegexSelector.match()..."
+        "<rest>": "match results returned by BaseRegexSelector.match()..."
     }]
     """
 
@@ -234,7 +240,7 @@ class DescriptionRegexSelector(BaseRegexSelector):
     Returns at most a single match of the form: [{
         "author": "<ID of user who made the PR/issue.>",
         "created_at": <Python datetime object when the Issue/PR was created>
-        "all": "match results returned by BaseRegexSelector.match()..."
+        "<rest>": "match results returned by BaseRegexSelector.match()..."
     }]
     """
 
@@ -268,7 +274,7 @@ class BaseCommentsRegexSelector(BaseRegexSelector):
         "user": "<ID of user who made the comment.>",
         "user_role": "<Role of the user on the repo>",
         "created_at": <Python datetime object when the Issue/PR was created>,
-        "all": "match results returned by BaseRegexSelector.match()..."
+        "<rest>": "match results returned by BaseRegexSelector.match()..."
     }]
     """
 
@@ -388,21 +394,27 @@ class MaintainerCommentsRegexSelector(BaseCommentsRegexSelector):
 class FilesSelector(Selector):
     """ Selects Repos/PRs based on contained file properties. """
 
-    def __init__(self, file_name_re: str="", file_type: str=""):
+    def __init__(
+            self, file_name_re: str="", file_type: str="",
+            name_re_case_insensitive: bool=False):
         self._file_type = file_type
         self._file_name_re = file_name_re
+        self._file_re_case_insensitive = name_re_case_insensitive
 
     def __repr__(self) -> str:
         cls = self.__class__.__name__
         name_regex = self._file_name_re
-        return f"{cls}({name_regex=})"
+        name_re_case_insensitive = self._file_re_case_insensitive
+        return f"{cls}({name_regex=}, {name_re_case_insensitive=})"
 
     @classmethod
     def get_selector_name(cls):
         return "files"
 
     @classmethod
-    def from_val(cls, val: dict) -> Self:
+    def from_val(cls, val: dict, extra: dict|None=None) -> Self:
+        if not extra:
+            extra = {}
         supported_keys = ["name_regex", "type"]
         if not any(k in val for k in supported_keys):
             raise ValueError(
@@ -411,7 +423,9 @@ class FilesSelector(Selector):
 
         kwargs = {
             "file_name_re": val.get("name_regex", ""),
-            "file_type": val.get("type", "")}
+            "file_type": val.get("type", ""),
+            "name_re_case_insensitive": val.get(
+                "case_insensitive", extra.get("case_insensitive", False))}
 
         return cls(**kwargs)
 
@@ -443,7 +457,9 @@ class FilesSelector(Selector):
             new = {}
             ref = None
             if self._file_name_re:
-                match = _get_match_groups(self._file_name_re, path)
+                match = _get_match_groups(
+                    self._file_name_re, path,
+                    case_insensitive=self._file_re_case_insensitive)
                 if match:
                     new["name_regex"] = match
                     ref = "name_regex.full"

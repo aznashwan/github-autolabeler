@@ -16,6 +16,8 @@ import logging
 import re
 
 
+LOG = logging.getLogger(__name__)
+
 RGB_COLOR_REGEX = re.compile("[a-fA-F0-9]{6}")
 
 LABEL_COLOR_CODES = {
@@ -80,3 +82,35 @@ def map_color_string(color: str):
             f"6-hex-digit case-insensitive RGB value or one of the "
             f"following: {LABEL_COLOR_CODES}")
     return color.lower()
+
+
+def merge_dicts(dict1: dict, dict2: dict) -> dict:
+    """ Recursively merges the two given dicts,
+    overwriting common keys from the first with the second.
+    """
+    if not isinstance(dict1, dict) or not isinstance(dict2, dict):
+        raise TypeError(
+            f"merge_dicts requires two dicts, got {dict1=} {dict2=}")
+
+    keys1 = set(dict1.keys())
+    keys2 = set(dict2.keys())
+
+    res = {k: dict1[k] for k in (keys1 - keys2)}
+    res.update({k: dict2[k] for k in (keys2 - keys1)})
+
+    common = keys1.intersection(keys2)
+    for key in common:
+        v1 = dict1[key]
+        v2 = dict2[key]
+
+        if isinstance(v1, dict) and isinstance(v2, dict):
+            res[key] = merge_dicts(v1, v2)
+            continue
+
+        if type(v1) != type(v2):
+            LOG.warning(
+                f"merge_dicts({dict1=}, {dict2=}): common key '{key}' "
+                f"has different type in dict2 ({type(v1)=} != {type(v2)=})")
+        res[key] = v2
+
+    return res

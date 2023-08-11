@@ -16,6 +16,7 @@
 
 
 import ast
+import itertools
 import logging
 import re
 
@@ -23,6 +24,44 @@ import re
 LOG = logging.getLogger(__name__)
 
 FORMAT_GROUP_REGEX = re.compile(r"\{([^\}]+)\}")
+
+DEFAULT_ALLOWED_IMPORTS = list(itertools.chain(*[
+    [
+        # Stdlib utility modules we'd always like to offer in full:
+        "abc",
+        "arrays",
+        "base64",
+        "bisect",
+        "binascii",
+        "cmath",
+        "collections",
+        "colorsys",
+        "contextlib",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "enum",
+        "fractions",
+        "functools",
+        "itertools",
+        "json",
+        "math",
+        "mimetypes",
+        "numbers",
+        "operator",
+        "pprint",
+        "re",
+        "random",
+        "shlex",
+        "statistics",
+        "string",
+        "unicodedata",
+        "zoneinfo",
+    ],
+    # Some utilities from os.path:
+    [f"os.path.{f}" for f in ["isabs", "join", "sep"]],
+]))
 
 
 def format_string_with_expressions(string: str, variables: dict) -> str:
@@ -57,20 +96,93 @@ def format_string_with_expressions(string: str, variables: dict) -> str:
 
 def evaluate_string_expression(
         statement: str, variables: dict) -> object:
+    """ Evaluates the given string expression and returns the resulting object. """
+    if not isinstance(statement, str):
+        raise TypeError(f"Expected string statement, got: {statement}")
+
     builtins = _get_safe_builtins()
-    return eval(statement, {"__builtins__": builtins}, variables)
+
+    globs = {k: v for k, v in variables.items()}
+    globs["__builtins__"] = builtins
+    return eval(statement, globs, {})
 
 
 def check_string_expression(statement: str, variables: dict):
+    """ Checks whether a string expression is safe to run. """
+    banned_strings = ["__loader__"]
+    present = [s for s in banned_strings if s in statement]
+    if present:
+        raise NameError(
+            f"Cannot use any of the following banned string in statement "
+            f"{statement}: {present}")
+
     expr = ast.parse(statement, mode='eval', filename=__name__)
     return _check_expression_safety(
         expr.body, variables, builtins=_get_safe_builtins())
 
 
+def check_imports_for_definitions(
+        definitions: str, variables: dict, allowed_import_names=None) -> list[str]:
+    """ Parses the given defnitions string ensuring that any imports are allowed.
+
+    Returns the list of names imported by the definitions, including nested
+    imports using 'from mod import item' imports as 'mod.item'.
+    """
+    _ = variables
+
+    if not allowed_import_names:
+        allowed_import_names = []
+    modules = []
+    for node in ast.walk(ast.parse(definitions)):
+        if isinstance(node, ast.Import):
+            modules.extend([n.name for n in node.names])
+        elif isinstance(node, ast.ImportFrom):
+            modname = node.module
+            # NOTE(aznashwan): preventing requiring modname.
+            # modules.append(modname)
+            for name in node.names:
+                modules.append(f"{modname}.{name.name}")
+
+    forbidden = [m for m in modules if m not in allowed_import_names]
+    if forbidden:
+        raise ImportError(
+            f"Cannot import items {forbidden} in definition string: {definitions}\n"
+            f"Only allowed imports are {allowed_import_names}")
+
+    return modules
+
+
+def evaluate_string_definitions(
+        definitions: str, variables: dict,
+        scrub_imports: bool=False,
+        allowed_import_names: list[str]|None=None) -> dict:
+    """ `exec()`s the provided Python definitions string and returns
+    a dict with all new definitions within it.
+
+    param scrub_imports: dictates whether any imported items inlcuded
+    in the definition should be removed from resulting namespace or not.
+    """
+    imported_names = check_imports_for_definitions(
+        definitions, variables, allowed_import_names=allowed_import_names)
+
+    # NOTE: we execute with all items as globals so locals will
+    # contain all the new definitions.
+    # safe_builtins = _get_safe_builtins()
+    safe_builtins = {}
+    safe_builtins.update(variables)
+    locals = {}
+    exec(definitions, safe_builtins, locals)
+
+    if scrub_imports:
+        locals = {k: locals[k] for k in locals if k not in imported_names}
+
+    return locals
+
+
 def _get_safe_builtins() -> dict:
     forbidden = [
-        "__import__", "breakpoint", "compile",
-        "eval", "exec", "exit", "open", "input",
+        "__import__", "__loader__", "breakpoint", "compile",
+        "eval", "exec", "exit", "open", "input", "copyright",
         "memoryview", "print", "quit"]
 
     builtins_copy = {k: v for k, v in __builtins__.items()}
@@ -89,10 +201,11 @@ def _validate_function_call(call: ast.Call, values: dict, builtins=None):
     if builtins is None:
         builtins = {}
     if isinstance(call.func, ast.Name):
-        if call.func.id not in builtins:
+        if call.func.id not in builtins and call.func.id not in values:
             raise NameError(
-                f"Cannot use function {call.func.id}. "
-                f"Available functions are: {builtins}")
+                f"Cannot use function '{call.func.id}'. "
+                f"Available functions are: "
+                f"{set(builtins.keys()).union(values.keys())}")
         return
 
     # Method call:
