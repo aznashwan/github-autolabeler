@@ -262,7 +262,8 @@ def _check_expression_safety(
     supported_exprs = (
             ast.Expression, ast.Name, ast.BinOp, ast.Compare,
             ast.Call, ast.Constant, ast.Attribute, ast.BoolOp,
-            ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp)
+            ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp,
+            ast.Subscript)
 
     match type(expr):
         case ast.Call:
