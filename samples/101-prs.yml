@@ -1,0 +1,26 @@
+# This file showcase all available selectors for PRs.
+
+
+random-pr-label:
+  color: yellow
+  description: |
+    This is a random label applied to a PR based on a number of random factors.
+  selectors:
+    pr:
+      author: "johndoe"
+      author_roles: ['admin']
+      title: ["some specific", "title regexes"]
+      description: ["some specific", "description"]
+      diff:
+        min: 10
+        max: 100
+      inactivity: 30
+      is_draft: false
+      state: open
+      approved: false
+      target:
+        branch: 'main'
+        repo: ['<our repo>']
+      source:
+        branch: 'main'
+        repo: ['list', 'of', 'acceptable', 'source', 'repos']

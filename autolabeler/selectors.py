@@ -13,6 +13,8 @@
 #    under the License.
 
 import abc
+import enum
+import itertools
 import logging
 import math
 import re
@@ -30,6 +32,20 @@ LOG = logging.getLogger(__name__)
 MATCH_RESULT_FIELD_REGEX = re.compile(r'^[a-zA-Z_]\w*$')
 
 FileContainingObject = typing.Union[Repository, PullRequest]
+
+
+class SelectorStrategy(enum.Enum):
+    ALL = "all"
+    ANY = "any"
+
+    def get_function(self):
+        match self:
+            case SelectorStrategy.ALL:
+                return all
+            case SelectorStrategy.ANY:
+                return any
+            case other:
+                raise ValueError(f"No action for seletor strategy {other}")
 
 
 class MatchResult(dict):
@@ -71,7 +87,7 @@ class MatchResult(dict):
 class Selector(metaclass=abc.ABCMeta):
 
     @abc.abstractclassmethod
-    def from_val(cls, val: dict, extra: dict|None=None) -> Self:
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
         """ Load the selector from a value. """
         _ = val
         _ = extra
@@ -87,12 +103,128 @@ class Selector(metaclass=abc.ABCMeta):
         return NotImplemented
 
 
+class MultiSelector(Selector):
+    """ Aggregates match results from multiple selectors, returning
+    "namespaced" match results with each sub-selector's results.
+    """
+
+    def __init__(
+            self, selectors: list[Selector],
+            selector_strategy: SelectorStrategy=SelectorStrategy.ALL):
+        if not selectors:
+            raise ValueError(
+                f"{self.__class__.__name__}() requires at least one selector.")
+
+        self._selectors = selectors
+        self._selector_strategy = selector_strategy
+
+    def __repr__(self) -> str:
+        selectors = self._selectors
+        selector_strategy = self._selector_strategy.value
+        return f"{self.__class__.__name__}({selectors=}, {selector_strategy=})"
+
+    @abc.abstractclassmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        raise NotImplementedError(f"{cls}: supported object types are required.")
+
+    @abc.abstractclassmethod
+    def _get_selector_classes(cls) -> list[type]:
+        raise NotImplementedError(f"{cls}: no selector classes defined.")
+
+    @classmethod
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        if not isinstance(val, dict):
+            raise TypeError(
+                f"{cls.__name__}.from_val(): requires dict, got {val}")
+        if extra is None:
+            extra = {}
+
+        selectors_map = {
+            s.get_selector_name(): s
+            for s in cls._get_selector_classes()}  # pyright: ignore
+
+        undefined_selectors = [
+            sname for sname in val if sname not in selectors_map]
+        if undefined_selectors:
+            raise ValueError(
+                f"{cls.__name__}.from_val(): unsupported selector names "
+                f"{undefined_selectors}. Supported selectors are: "
+                f"{list(selectors_map)}")
+
+        selectors = []
+        for selector_name, selector_def in val.items():
+            selector_cls = selectors_map[selector_name]
+            selectors.append(
+                selector_cls.from_val(val=selector_def, extra=extra))
+
+        # TODO(aznashwan): read this from definition, or the opts?
+        strategy = val.get(
+            "selector_strategy",
+            extra.get('selector_strategy', SelectorStrategy.ALL))
+
+        return cls(selectors, selector_strategy=strategy)
+
+    def match(self, obj: object) -> list[MatchResult]:
+        supported_targets = self._get_supported_target_types()
+        if not isinstance(obj, tuple(supported_targets)):
+            LOG.debug(
+                f"{self}.match({obj}) skipping unsupported target type "
+                f"'{type(obj)}'. Supported types are {supported_targets}.")
+            return []
+
+        # TODO(aznashwan): cascade formatting options here?
+        # (e.g. conditional regex params and stuff? Seems pretty redundant)
+        selector_matches = {}
+        for selector in self._selectors:
+            selector_name = selector.get_selector_name()
+            selector_matches[selector_name] = selector.match(obj)
+
+        strategy = self._selector_strategy.get_function()
+        if not strategy(selector_matches.values()):
+            LOG.info(
+                f"{self}.match({obj}): multi-selector strategy "
+                "{self._selector_strategy} failed on selector resuls "
+                f"{selector_matches}. Returning no matches.")
+            return []
+
+        all_matches = []
+        # maps index in `all_matches` to its selector name to crossref
+        # results from itertools.matches.
+        selector_matches_index_map = {}
+        for sname, matches in selector_matches.items():
+            # NOTE(aznashwan): defaulting non-matching selectors to empty dict
+            # so they can be checked within statements without a nameerror.
+            if not matches:
+                LOG.debug(
+                    f"{self}.match({obj}): selector '{sname}' returned no "
+                    "matches. Defaulting to empty dict for compatibility.")
+                selector_matches[sname] = [{}]
+                matches = [{}]
+
+            selector_matches_index_map[len(all_matches)] = sname
+            all_matches.append(matches)
+
+        match_results = []
+        for match_set in itertools.product(*all_matches):
+            match_dict = {
+                selector_matches_index_map[i]: selector_match
+                for i, selector_match in enumerate(match_set)}
+            match_results.append(MatchResult(match_dict))
+
+        LOG.debug(f"{self}.match({obj}) = {match_results}")
+        return match_results
+
+
 class BaseRegexSelector(Selector):
     """ Returns a match based on a provided regexes. """
 
     def __init__(self, regexes: list[str], case_insensitive: bool=False):
         self._regexes = regexes
         self._case_insensitive = case_insensitive
+
+    @abc.abstractclassmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        raise NotImplementedError(f"{cls}: supported object types are required.")
 
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
@@ -164,6 +296,14 @@ class BaseRegexSelector(Selector):
             LOG.warning(f"{self}.match({obj}): no regexes defined.")
             return []
 
+        supported_types = self._get_supported_target_types()
+        if not supported_types or not isinstance(
+                obj, tuple(self._get_supported_target_types())):
+            LOG.warn(
+                f"{self.__class__}.match({obj}) got unsupported object type "
+                f"{type(obj)}. Supported types are {supported_types}")
+            return []
+
         res = []
         for item in self._get_items_to_match(obj):
             matches = {}
@@ -174,7 +314,6 @@ class BaseRegexSelector(Selector):
                     case_insensitive=self._case_insensitive)
 
                 meta = item.get('meta', {})
-                print(f"### {meta}")
                 if match and meta:
                     match.update(meta)
 
@@ -206,8 +345,6 @@ class TitleRegexSelector(BaseRegexSelector):
     """ Checks the title of issues/PRs based on the given regex.
 
     Returns at most a single match of the form: [{
-        "author": "<ID of user who made the PR/issue.>",
-        "created_at": <Python datetime object when the Issue/PR was created>
         "<rest>": "match results returned by BaseRegexSelector.match()..."
     }]
     """
@@ -215,6 +352,10 @@ class TitleRegexSelector(BaseRegexSelector):
     @classmethod
     def get_selector_name(cls) -> str:
         return "title"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
 
     def _get_items_to_match(self, obj: object) -> list[dict]:
         if not isinstance(obj, PullRequest|Issue):
@@ -225,11 +366,36 @@ class TitleRegexSelector(BaseRegexSelector):
             return []
 
         return [{
-            "string": obj.title or "NOTITLE",
-            "meta": {
-                "author": obj.user.login,
-                "created_at": obj.created_at,
-            }
+            "string": obj.title or "NOTITLE"
+        }]
+
+
+class AuthorRegexSelector(BaseRegexSelector):
+    """ Checks the ID of the author of issues/PRs based on the given regex.
+
+    Returns at most a single match of the form: [{
+        "<rest>": "match results returned by BaseRegexSelector.match(author)..."
+    }]
+    """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "author"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest|Issue):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.user.login,
         }]
 
 
@@ -238,8 +404,6 @@ class DescriptionRegexSelector(BaseRegexSelector):
     """ Checks the description of issues/PRs based on the given regex.
 
     Returns at most a single match of the form: [{
-        "author": "<ID of user who made the PR/issue.>",
-        "created_at": <Python datetime object when the Issue/PR was created>
         "<rest>": "match results returned by BaseRegexSelector.match()..."
     }]
     """
@@ -247,6 +411,10 @@ class DescriptionRegexSelector(BaseRegexSelector):
     @classmethod
     def get_selector_name(cls) -> str:
         return "description"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
 
     def _get_items_to_match(self, obj: object) -> list[dict]:
         if not isinstance(obj, PullRequest|Issue):
@@ -258,10 +426,6 @@ class DescriptionRegexSelector(BaseRegexSelector):
 
         return [{
             "string": obj.body or "NODESCRIPTION",
-            "meta": {
-                "author": obj.user.login,
-                "created_at": obj.created_at,
-            }
         }]
 
 
@@ -286,6 +450,10 @@ class BaseCommentsRegexSelector(BaseRegexSelector):
             user_roles_cache: dict|None=None):
         super().__init__(regexes=regexes, case_insensitive=case_insensitive)
         self._user_roles_cache = user_roles_cache or {}
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
 
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
@@ -391,6 +559,36 @@ class MaintainerCommentsRegexSelector(BaseCommentsRegexSelector):
         return "maintainer_comments"
 
 
+class FileLister():
+    """ Lists changed files for PRs or whole file tree for Repos. """
+
+    def __init__(self, obj: Repository|PullRequest):
+        self._obj = obj
+
+    def _list_files_from_repo(self, repo: Repository, path: str=""):
+        files = []
+        for item in repo.get_contents(path):  # pyright: ignore
+            if item.type == "dir":
+                files.extend(self._list_files_from_repo(repo, item.path))
+            else:
+                files.append(item)
+
+        return files
+
+    def _list_files_from_pr(self, pr: PullRequest):
+        return list(pr.get_files())
+
+    def list_file_paths(self) -> dict:
+        if isinstance(self._obj, Repository):
+            return {
+                f.path: f for f in self._list_files_from_repo(self._obj, "")}
+        elif isinstance(self._obj, PullRequest):
+            return {
+                f.filename: f for f in self._list_files_from_pr(self._obj)}
+        raise TypeError(
+            f"Can't list files for object {self._obj} ({type(self._obj)})")
+
+
 class FilesSelector(Selector):
     """ Selects Repos/PRs based on contained file properties. """
 
@@ -412,7 +610,10 @@ class FilesSelector(Selector):
         return "files"
 
     @classmethod
-    def from_val(cls, val: dict, extra: dict|None=None) -> Self:
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        if not isinstance(val, dict):
+            raise NotImplementedError(
+                f"{cls.__name__}.from_val() requires dict, got: {val}")
         if not extra:
             extra = {}
         supported_keys = ["name_regex", "type"]
@@ -506,7 +707,12 @@ class DiffSelector(Selector):
         return "diff"
 
     @classmethod
-    def from_val(cls, val: dict):
+    def from_val(cls, val: object|None=None, extra: dict|None=None):
+        _ = extra
+        if not isinstance(val, dict):
+            raise NotImplementedError(
+                f"{cls.__name__}.from_val() requires dict, got: {val}")
+
         supported_keys = ["min",  "max", "type"]
         unsupported_keys = [k for k in val if k not in supported_keys]
         if unsupported_keys:
@@ -585,37 +791,78 @@ class DiffSelector(Selector):
         return [MatchResult(res)]
 
 
-class FileLister():
-    """ Lists changed files for PRs or whole file tree for Repos. """
 
-    def __init__(self, obj: Repository|PullRequest):
-        self._obj = obj
+class RepoSelector(MultiSelector):
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "repo"
 
-    def _list_files_from_repo(self, repo: Repository, path: str=""):
-        files = []
-        for item in repo.get_contents(path):  # pyright: ignore
-            if item.type == "dir":
-                files.extend(self._list_files_from_repo(repo, item.path))
-            else:
-                files.append(item)
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [Repository]
 
-        return files
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [FilesSelector]
 
-    def _list_files_from_pr(self, pr: PullRequest):
-        return list(pr.get_files())
 
-    def list_file_paths(self) -> dict:
-        if isinstance(self._obj, Repository):
-            return {
-                f.path: f for f in self._list_files_from_repo(self._obj, "")}
-        elif isinstance(self._obj, PullRequest):
-            return {
-                f.filename: f for f in self._list_files_from_pr(self._obj)}
-        raise TypeError(
-            f"Can't list files for object {self._obj} ({type(self._obj)})")
+
+class PRsSelector(MultiSelector):
+    # def __init__(self,
+    #              author: str|None=None,
+    #              author_roles: str|None=None,
+    #              target_repo: str|None=None,
+    #              source_repo: str|None=None,
+    #              target_branch: str|None=None,
+    #              source_branch: str|None=None,
+    #              is_draft: bool|None=None,
+    #              is_approved: bool|None=None,
+    #              title: list[str]|None=None,
+    #              description: list[str]|None=None,
+    #              last_activity: str|None=None):
+    #     pass
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "prs"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [
+            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
+            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
+            DiffSelector, FilesSelector]
+
+
+class IssuesSelector(MultiSelector):
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "issues"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [Issue]
+
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [
+            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
+            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector]
 
 
 SELECTOR_CLASSES = [
+    RepoSelector,
+    PRsSelector,
+    IssuesSelector,
+    # TODO(aznashwan): determine worth of allowing these top-level selectors
+    # to be define directly instead of needing to pass through the the main
+    # Repos/PRs/Issues selectors.
+    AuthorRegexSelector,
     FilesSelector,
     DiffSelector,
     TitleRegexSelector,

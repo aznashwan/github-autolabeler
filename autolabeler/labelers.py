@@ -141,14 +141,26 @@ class SelectorLabeler(BaseLabeler):
         color = self._color
         desc = self._description[:16]
         condition = self._condition
+        selectors = self._selectors
         actioner = self._actioner
-        return f"{cls}({name=}, {color=}, {desc=}, {condition=}, {actioner=})"
+        return f"{cls}({name=}, {color=}, {desc=}, {condition=}, {actioner=}, {selectors=})"
 
     @classmethod
     def from_dict(
             cls, label_name: str, val: dict,
             custom_options: dict|None=None,
             custom_definitions: dict|None=None) -> Self:
+        """ Loads SelectorLabeler from dicts of the form: {
+            "color": str,        # required
+            "description": str,  # required
+            "if": <statement to run on selector matches>,
+            "selectors": <list of raw selectors>,
+            "prs": <explicit PRs selector definition>,
+            "issues": <explicit Issues selector definition>,
+            "repo": <explicit Repo selector definition>,
+            "action": <action definition>,
+        }
+        """
         required_fields = [
             "color", "description"]
         if not type(val) is dict:
@@ -161,8 +173,10 @@ class SelectorLabeler(BaseLabeler):
             raise ValueError(
                 f"Missing required fields {missing} in SelectorLabeler definition: {val}")
 
-        supported_fields = ["selectors", "action", "if"]
+        supported_selectors = ["prs", "issues", "repo"]
+        supported_fields = ["action", "if", "selectors"]
         supported_fields.extend(required_fields)
+        supported_fields.extend(supported_selectors)
         unsupported = [f for f in val if f not in supported_fields]
         if unsupported:
             raise ValueError(
@@ -171,6 +185,11 @@ class SelectorLabeler(BaseLabeler):
 
         sels = []
         sels_defs = val.get("selectors", {})
+        # Update the selectors list with first-class repo/issues/prs selectors:
+        sels_defs.update({
+            special: val[special]
+            for special in supported_selectors
+            if special in val})
         for sname, sbody in sels_defs.items():
             try:
                 scls = selectors.get_selector_cls(sname, raise_if_missing=True)
@@ -225,9 +244,13 @@ class SelectorLabeler(BaseLabeler):
         successful_matches = []
         selector_matches_index_map = {}  # maps index in `selector_matches` to its name
         for selector, match in selector_matches.items():
+            selector_matches_index_map[len(successful_matches)] = selector
             if match:
-                selector_matches_index_map[len(successful_matches)] = selector
                 successful_matches.append(match)
+            else:
+                # NOTE(aznashwan): defaulting non-matching selectors to empty dict
+                # so they can be checked within statements without a NameError.
+                successful_matches.append([selectors.MatchResult({})])
         if self._selectors and not successful_matches:
             # NOTE(aznashwan): if no selector matched at all, return:
             LOG.debug(f"{self} had no selector matches whatsoever, returning.")
@@ -296,6 +319,9 @@ class SelectorLabeler(BaseLabeler):
 
             new_labels_map[new.name] = new
 
+        LOG.debug(
+            f"{self}._get_labels_for_selector_matches(): Returning following labels "
+            f"{new_labels_map} for selector matches: {selector_matches}")
         return list(new_labels_map.values())
 
     def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:

@@ -9,25 +9,33 @@ author:
     color: green
     description: This PR/Issue was openened by an author with a funny username.
     selectors:
-      # NOTE: an empty 'title' selector will match any PR/Issue title.
-      title:
+      # NOTE: an empty 'author' selector will match any PR/Issue author.
+      author:
     # NOTE: `is_funny()` is defined in the `__defs__` key below!
-    if: is_funny(title.author)
+    if: is_funny(author.match)
     action:
       comment: |
         Knock knock!
         Q: Who's there?
-        A: None other than @{ title.author }.
+        A: None other than @{ author.match }.
         Q: Lol.
 
   double-funny:
     color: teal
     description: This PR was made by an author with a REALLY funny username.
-    selectors:
-      title:
-    if: is_funny(title.author, "hwan")
+    prs:
+      author:
+    issues:
+      author:
     action:
       comment: Lol that one's ever better.
+
+    # BAD: 'prs' and 'issues' cannot both match at the same time, so accessing
+    # fields from either is unsafe and will lead to a NameError.
+    if: is_funny(prs.author.match or issues.author.match, "y6afraidof7")
+
+    # GOOD: use Python's `or` to pick the right match before accessing its fields:
+    if: is_funny((prs or issues).author.match, "y6afraidof7")
 
     # NOTE: this '__defs__' is defined within the 'double-funny' labeler
     # body, not in the 'author' label prefix.
@@ -40,7 +48,7 @@ author:
 
 
 __defs__: |
-  THE_JOKE = 'azna'
+  THE_JOKE = '789'
 
   def is_funny(username: str) -> bool:
     global THE_JOKE
