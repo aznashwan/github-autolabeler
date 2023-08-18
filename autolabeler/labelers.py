@@ -304,10 +304,11 @@ class SelectorLabeler(BaseLabeler):
                    name, self._color, description,
                     post_labelling_action=post_action,
                     post_labelling_comment=post_comment)
-            except NameError as e:
+            except Exception as e:
                 LOG.error(
-                    f"{self}: skipping error formatting label params: {e}\n"
-                    f"{traceback.format_exc()}")
+                    f"{self}: skipping error formatting label params "
+                    f"with match values: {match_dict}: "
+                    f"{e}\n{traceback.format_exc()}")
             if not new:
                 continue
 

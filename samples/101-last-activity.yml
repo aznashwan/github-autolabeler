@@ -1,0 +1,36 @@
+# This sampel showcases the uses of the "last_activity" and "last_comment" selectors.
+
+inactive:
+  stale:
+    color: yellow
+    description: |
+      This issue or PR has been inactive for more than { last_activity.days_since } days.
+    if: last_activity and last_comment
+    selectors:
+      author:
+      # NOTE: these selectors accept an integer number of days since the last activity
+      last_activity: 5
+      last_comment: 5
+    action:
+      comment: |
+        @{ author.full }: There have been no updates for more than { last_activity.days_since } days.
+
+        Please provide a follow-up soon.
+
+  abandoned:
+    color: red
+    description: |
+      This issue or PR has been abandoned after { last_activity.days_since } days.
+    if: last_activity and last_comment
+    selectors:
+      author:
+      last_activity: 10
+      last_comment: 10
+    action:
+      perform: close
+      comment: |
+        @{ author.full }: There have been no updates for more than { last_activity.days_since } days.
+
+        Marking as abandoned and closing now.
+
+

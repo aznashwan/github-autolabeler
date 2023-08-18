@@ -13,11 +13,13 @@
 #    under the License.
 
 import abc
+from datetime import datetime
 import enum
 import itertools
 import logging
 import math
 import re
+import types
 import typing
 from typing import Self
 
@@ -529,7 +531,7 @@ class BaseCommentsRegexSelector(BaseRegexSelector):
                     continue
 
             res.append({
-                "string": comm.body or "NOBODY",
+                "string": comm.body or "EMPTY",
                 "meta": {
                     "id": comm.id,
                     "user": comm.user.login,
@@ -835,7 +837,8 @@ class PRsSelector(MultiSelector):
         return [
             AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
             ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
-            DiffSelector, FilesSelector]
+            DiffSelector, FilesSelector, LastContributionActivitySelector,
+            LastContributionCommentSelector]
 
 
 class IssuesSelector(MultiSelector):
@@ -852,7 +855,91 @@ class IssuesSelector(MultiSelector):
     def _get_selector_classes(cls) -> list[type]:
         return [
             AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
-            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector]
+            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
+            LastContributionCommentSelector, LastContributionActivitySelector]
+
+
+class BaseLastActivitySelector(metaclass=abc.ABCMeta):
+    """ Selects issues/PRs based on the duration in days since last update. """
+
+    def __init__(self, days_since: int=0):
+        self._days_since = days_since
+
+    @classmethod
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        """ Load the selector from a value. """
+        _ = extra
+        if not isinstance(val, (types.NoneType, int)):
+            raise ValueError(
+                f"{cls}.from_val(): requires an int or None.")
+
+        return cls(days_since=val or 0)
+
+    @abc.abstractmethod
+    def _get_last_update_timestamp(self, obj: Issue|PullRequest):
+        _ = obj
+        raise NotImplementedError("Must implement last timestamp.")
+
+    def match(self, obj: object) -> list[MatchResult]:
+        """ Returns a single match of the form: {
+            "timestamp": "<datetime object of last update>",
+            "days_since": "<int number of days since>",
+            "delta": "<datetime.timedelta object representing the time diff>",
+        }
+        """
+        if not isinstance(obj, (Issue, PullRequest)):
+            LOG.debug(
+                f"{self}.match({obj}) skipping unsupported target type "
+                f"'{type(obj)}'. Supported types are Issues and PRs.")
+            return []
+
+        now = datetime.now()
+        last_update = self._get_last_update_timestamp(obj)
+
+        delta = now - last_update
+        if self._days_since and delta.days < self._days_since:
+            return []
+
+        return [MatchResult({
+            "delta": delta,
+            "days_since": self._days_since,
+            "timestamp": last_update,
+        })]
+
+
+class LastContributionActivitySelector(BaseLastActivitySelector):
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "last_activity"
+
+    def _get_last_update_timestamp(self, obj: Issue|PullRequest):
+        return obj.updated_at or obj.created_at
+
+
+class LastContributionCommentSelector(BaseLastActivitySelector):
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "last_comment"
+
+    def _get_last_update_timestamp(self, obj: Issue|PullRequest):
+
+        comments = []
+        if isinstance(obj, Issue):
+            comments = [c for c in obj.get_comments()]
+        else:
+            # TODO(aznashwan): handle Review Comments too.
+            as_issue = obj.as_issue()
+            comments = [c for c in as_issue.get_comments()]
+
+        last_update = obj.created_at
+        for comm in comments:
+            last_comm_update = comm.updated_at or comm.created_at
+            if last_comm_update > last_update:
+                last_update = last_comm_update
+
+        return last_update
 
 
 SELECTOR_CLASSES = [
@@ -865,6 +952,8 @@ SELECTOR_CLASSES = [
     AuthorRegexSelector,
     FilesSelector,
     DiffSelector,
+    LastContributionActivitySelector,
+    LastContributionCommentSelector,
     TitleRegexSelector,
     DescriptionRegexSelector,
     ContributorCommentsRegexSelector,

@@ -18,12 +18,9 @@
 import ast
 import itertools
 import logging
-import re
 
 
 LOG = logging.getLogger(__name__)
-
-FORMAT_GROUP_REGEX = re.compile(r"\{([^\}]+)\}")
 
 DEFAULT_ALLOWED_IMPORTS = list(itertools.chain(*[
     [
@@ -64,6 +61,30 @@ DEFAULT_ALLOWED_IMPORTS = list(itertools.chain(*[
 ]))
 
 
+def _get_first_format_span(string: str) -> dict:
+    start = string.find("{")
+    if start < 0:
+        return {}
+
+    opened_inner_braces = 0
+    for i, c in enumerate(string[start+1:]):
+        if opened_inner_braces < 0:
+            break
+
+        if c == "{":
+            opened_inner_braces += 1
+            continue
+        if c == "}":
+            if opened_inner_braces == 0:
+                return {
+                    "start": start,
+                    "end": start + i + 1}
+            opened_inner_braces -= 1
+
+    raise SyntaxError(
+        f"Provided format string has inbalanced braces: {string}")
+
+
 def format_string_with_expressions(string: str, variables: dict) -> str:
     """ Runs all expressions in formatted strings, calls str() on their
     results, and formats them back into the original string.
@@ -73,13 +94,15 @@ def format_string_with_expressions(string: str, variables: dict) -> str:
     result = ""
     search_pos = 0
     while True:
-        match = FORMAT_GROUP_REGEX.search(string, pos=search_pos)
-        if not match:
+        span = _get_first_format_span(string[search_pos:])
+        if not span:
             result = f"{result}{string[search_pos:]}"
             break
-        result = f"{result}{string[search_pos:match.start()]}"
+        span_start = span["start"]
+        span_end = span["end"]
+        result = f"{result}{string[search_pos:search_pos+span_start]}"
 
-        statement = match.group(0)[1:-1].strip()  # strip braces
+        statement = string[search_pos+span_start+1: search_pos+span_end].strip()  # strip braces
         check_string_expression(statement, variables)
         try:
             expr_res = evaluate_string_expression(statement, variables)
@@ -89,8 +112,11 @@ def format_string_with_expressions(string: str, variables: dict) -> str:
                 f"{ex}") from ex
 
         result = f"{result}{expr_res}"
-        search_pos = match.end()
+        search_pos = search_pos + span_end + 1
 
+    LOG.debug(
+        f"Successfully processed statement '{string}' into '{result}' "
+        f"with variables: {variables}")
     return result
 
 
@@ -233,6 +259,11 @@ def _check_expression_safety(
     if builtins is None:
         builtins = {}
 
+    supported_exprs = (
+            ast.Expression, ast.Name, ast.BinOp, ast.Compare,
+            ast.Call, ast.Constant, ast.Attribute, ast.BoolOp,
+            ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp)
+
     match type(expr):
         case ast.Call:
             _validate_function_call(
@@ -250,13 +281,9 @@ def _check_expression_safety(
             _check_expression_safety(expr.left, variables)  # pyright: ignore
             for cmp in expr.comparators:  # pyright: ignore
                 _check_expression_safety(cmp, variables)
-        case some if some in (
-                ast.Attribute, ast.Constant, ast.Subscript, ast.BoolOp):
+        case some if some in supported_exprs:
             pass
         case other:
-            supported_exprs = (
-                    ast.Expression, ast.Name, ast.BinOp, ast.Compare,
-                    ast.Call, ast.Constant, ast.Attribute, ast.BoolOp)
             raise SyntaxError(
                 f"Expression {expr} must be one of {supported_exprs}. "
                 f"Actual type: {other}")
