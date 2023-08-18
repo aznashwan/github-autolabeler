@@ -386,6 +386,7 @@ def load_labelers_from_config(
     # Evaluate and "merge" any added options in this config section.
     options = config.pop(options_magic_key, {})
     curr_options = utils.merge_dicts(custom_options, options)
+    separator = curr_options.get("separator", separator)
 
     # Evaluate and "merge" any added definitions in this config section.
     curr_defs = custom_definitions
@@ -400,6 +401,11 @@ def load_labelers_from_config(
     labelers = []
     for key, val in config.items():
         name = key
+
+        labeler_options_defs = val.pop(options_magic_key, {})
+        labeler_options = utils.merge_dicts(custom_options, labeler_options_defs)
+        separator = labeler_options.get("separator", separator)
+
         if prefix:
             name = f"{prefix}{separator}{key}"
         if all(k in val for k in required_labeler_keys):
@@ -418,7 +424,7 @@ def load_labelers_from_config(
             labelers.append(
                 SelectorLabeler.from_dict(
                     name, val,
-                    custom_options=curr_options,
+                    custom_options=labeler_options,
                     custom_definitions=labeler_defs))
         else:
             labelers.extend(load_labelers_from_config(

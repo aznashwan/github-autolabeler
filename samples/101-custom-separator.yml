@@ -1,0 +1,15 @@
+# This example showcases namespaced labels with a custom separator.
+
+prefix:
+  with_slash:
+    color: yellow
+    description: Composed with slashes.
+    __opts__:
+      separator: "/"
+
+  with_colons:
+    color: green
+    description: Composed with colons.
+    __opts__:
+      separator: "::"
+
