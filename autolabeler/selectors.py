@@ -356,6 +356,8 @@ class BaseRegexSelector(Selector):
 
             for i, r in enumerate(matches):
                 m = matches[r]
+                if not m:
+                    continue
                 new.update({
                     f"match{i}": m["match"],
                     f"groups{i}": matches[r]["groups"]})
@@ -845,7 +847,7 @@ class PRsSelector(MultiSelector):
 
     @classmethod
     def get_selector_name(cls) -> str:
-        return "prs"
+        return "pr"
 
     @classmethod
     def _get_supported_target_types(cls) -> list[type]:
@@ -864,7 +866,7 @@ class IssuesSelector(MultiSelector):
 
     @classmethod
     def get_selector_name(cls) -> str:
-        return "issues"
+        return "issue"
 
     @classmethod
     def _get_supported_target_types(cls) -> list[type]:

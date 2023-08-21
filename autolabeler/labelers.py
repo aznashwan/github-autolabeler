@@ -400,6 +400,13 @@ def load_labelers_from_config(
     required_labeler_keys = ['color', 'description']
     labelers = []
     for key, val in config.items():
+        if not isinstance(val, dict):
+            raise ValueError(
+                "Failed to recursively parse config: got to the following "
+                "non-mapping object in hopes it would be a labeler definition "
+                f"containing a 'color' and 'description' field: {val}")
+
+
         name = key
 
         labeler_options_defs = val.pop(options_magic_key, {})

@@ -1,117 +1,52 @@
-# This defines a static static label named 'example-label' with the given props.
-example-label:
-  label-color: 0075ca  # blue
-  label-description: This is a simple example static label.
+# This file contains the config shown on the "Basic Config" section of the README.
 
+# This will define two static "namespaced labels" which can be later be manually
+# set on PRs/Issues. (help-wanted/good-first-issue and help-wanted/more-eyes)
+help-wanted:
+  good-first-issue:
+    color: green
+    description: This issue is a great starting point for first time contributors.
+  more-eyes:
+    color: yellow
+    description: This issue/PR requires more maintainers to weigh in.
 
-# This defines two "namespaced" labels named: label-prefix/sublabel-{1,2}.
-label-prefix:
-  sublabel-1:
-    label-color: 0075ca
-    label-description: This is a simple first sublabel.
-  sublabel-2:
-    label-color: d73a4a  # red
-    label-description: This is a simple second sublabel.
+# This will define a label named "bug" which will automatically be associated
+# with issues/PRs whose titles/descriptions match the provided regexes.
+bug:
+  color: red
+  description: This label signifies the Issue/PR is about a bug.
+  selectors:
+    title: "(issue|bug|fix|problem|failure|error)"
+    description: "(issue|bug|problem|failure|error)"
 
+    # This will also make the label be applied to PRs/Issues where a maintainer
+    # comments the given magic string on a single line within a comment.
+    maintainer_comments: "^(/label-me-as bug)$"
 
-# This will define as many labels as there are filepath regex matches.
-label-for-sample-file-{files-name-regex-group-1}:
-  label-color: 0075ca
-  # NOTE: "group-0" is the entire filepath.
-  label-description: This label was created for file '{files-name-regex-group-0}'.
-  if: files.type == "text" and len(files.name_regex.groups) > 1
+# This will auto-generate a unique label for any YAML file in the 'samples' directory.
+sample-{ files.name_regex.groups[0] }:  # { $SELECTOR_NAME.$FIELD_NAME.$RESULT_NAME }
+  color: yellow
+  description: This label was created for sample file '{ files.name_regex.full }'.
   selectors:
     files:
-      # This will specify a regex to be matched against full filepaths in
-      # the repo tree. 'files-name-group-0' will be the entire filename.
-      name-regex: "samples/(.*).yaml"
+      name_regex: "samples/(.*).yaml"
 
-      # TODO(aznashwan):
-      # type: "<binary|text>"
-      # size: min/max filesizes for some "kind/bigblob"-type label combos?
-
-
-# This will define a label named 'one-at-a-time' which will automatically
-# get applied to PRs attempting to modify multiple files in a specific dir.
-one-at-a-time:
-  label-color: d73a4a  # red
-  label-description: |
-    This PR is attempting to modify multiple files in onetimers.
+# This will automatically label and close all PRs which contain more than 10k lines of code.
+needs-splitting:
+  color: red
+  description: This PR has more than {diff.min} lines and must be split.
   selectors:
-    files:
-      name-regex: onetimers/(.*).txt
-  if: len(files) > 1
+    author:
+    diff:
+       type: total  # total = additions + deletions
+       min: 10000
+  if: diff.min != 0
+  # Will only trigger on PRs if the 'diff' selector returns a match.
   action:
     perform: close
-    comment: You cannot modify more than one file per PR in the 'onetimers' dir.
+    # NOTE: can include markdown directives in reply comment.
+    comment: |
+      Thank you for your contribution to our project! :smile:
+      Unfortunately, this PR is *too large to be reviewed effectively*. :disappointed:
+      Please break down the changes into individual PRs no larger than {diff.min} lines.
 
-
-# This will define a label named "bug" which will automatically be
-# associated with issues/PRs matching the provided regexes.
-bug:
-  label-color: d73a4a
-  label-description: This label signifies the Issue/PR is about a bug.
-  selectors:
-    regex:
-      # This allows for case insensitive searches. (default is false)
-      case-insensitive: true
-
-      # This will make the label be applied to PRs/Issues whose titles/descriptions
-      # match the given regex. (in this case, some simple keywords)
-      title: "(issue|bug|fix|problem|failure|error)"
-      description: "(issue|bug|problem|failure|error)"
-
-      # This will make the label applied to PRs/Issues where anyone comments
-      # the given magic string on a single line within the comment.
-      comments: "^(/label-me-as bug)$"
-      # Only allows maintainers to add this label via comment. (default is true)
-      maintainer-comments-only: false
-
-
-manual-{regex-comments-group-2}:
-  label-color: d73a4a
-  label-description: "This label was defined through a maintainer comment with: {regex-comments-group-1}"
-  selectors:
-    regex:
-      maintainer-comments-only: true
-      comments: "^(/label-me-as ([\\-a-z]+))$"
-
-
-# This will define two labels named "pr-size-measure/{small,large}" that will
-# automatically get applied to Pull Requsts whose change counts match.
-pr-size-measure:
-  small:
-    label-color: 0075ca
-    label-description: |
-      This PR is between {diff-min} and {diff-max} lines of code.
-    selectors:
-      diff:
-        type: net # Can be: additions/deletions/total/net (net = additions - deletions)
-        min: 1
-        max: 1000
-
-  large:
-    label-color: d73a4a
-    label-description: |
-      This PR is between {diff-min} and {diff-max} lines of code.
-    selectors:
-      diff:
-        min: 1000
-        # NOTE: setting max to zero will remove any upper bound.
-        max: 10000
-
-  too-big:
-    label-color: d73a4a
-    label-description: |
-      This PR has more than {diff-min} lines and must be broken down into smaller PRs.
-    selectors:
-      diff:
-        min: 10000
-    # NOTE: diff.total will only be non-nil on matching PRs.
-    if: diff.total
-    action:
-      # Will only trigger for PRs larger than 10k lines.
-      perform: close
-      with-comment: |
-        Thank you for your contribution, but this PR is too large to be reviewed efficiently.
-        Please break down the changes into individual PRs no larger than {diff-min} lines.
