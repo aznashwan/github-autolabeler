@@ -241,6 +241,11 @@ class SelectorLabeler(BaseLabeler):
             return [LabelParams(
                 self._name, self._color, self._description)]
 
+        if self._selectors and not any(selector_matches.values()):
+            # NOTE(aznashwan): if no selector matched at all, return:
+            LOG.debug(f"{self} had no selector matches whatsoever, returning.")
+            return []
+
         successful_matches = []
         selector_matches_index_map = {}  # maps index in `selector_matches` to its name
         for selector, match in selector_matches.items():
@@ -251,10 +256,6 @@ class SelectorLabeler(BaseLabeler):
                 # NOTE(aznashwan): defaulting non-matching selectors to empty dict
                 # so they can be checked within statements without a NameError.
                 successful_matches.append([selectors.MatchResult({})])
-        if self._selectors and not successful_matches:
-            # NOTE(aznashwan): if no selector matched at all, return:
-            LOG.debug(f"{self} had no selector matches whatsoever, returning.")
-            return []
 
         new_labels_map = {}
         for match_set in itertools.product(*successful_matches):

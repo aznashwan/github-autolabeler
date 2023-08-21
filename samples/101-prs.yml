@@ -7,21 +7,18 @@ random-pr-label:
     This is a random label applied to a PR based on a number of random factors.
   selectors:
     pr:
-      author: "johndoe"
-      author_roles: ['admin']
+      selector_strategy: all  # options are [any]/all/none
+      author: johndoe
+      author_role: admin
       title: ["some specific", "title regexes", "to match"]
       description: ["some specific", "description"]
-     diff:
+      diff:
         min: 10
         max: 100
-      inactivity: 30
+      last_activity: 30
       draft: false
       merged: false
       state: open
       approved: false
-      target:
-        branch: 'main'
-        repo: ['<our repo>']
-      source:
-        branch: 'main'
-        repo: ['list', 'of', 'acceptable', 'source', 'repos']
+      target_branch: main
+      source_branch: main

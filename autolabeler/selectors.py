@@ -37,6 +37,7 @@ FileContainingObject = typing.Union[Repository, PullRequest]
 
 
 class SelectorStrategy(enum.Enum):
+    """ Possible strategies for combining selectors. """
     ALL = "all"
     ANY = "any"
     NONE = "none"
@@ -54,10 +55,9 @@ class SelectorStrategy(enum.Enum):
 
 
 class ContributionState(enum.Enum):
-
+    """ Possible state for issues/PRs. """
     OPEN = "open"
     CLOSED = "closed"
-    MERGED = "merged"
 
 
 class MatchResult(dict):
@@ -118,6 +118,15 @@ class Selector(metaclass=abc.ABCMeta):
         """ Returns a list of matches for the Github object. """
         return NotImplemented
 
+    def _get_repo_for_object(self, obj: PullRequest|Issue) -> Repository:
+        repo = None
+        if isinstance(obj, Issue):
+            repo = obj.repository
+        else:
+            as_issue = obj.as_issue()
+            repo = as_issue.repository
+        return repo
+
 
 class MultiSelector(Selector):
     """ Aggregates match results from multiple selectors, returning
@@ -126,7 +135,7 @@ class MultiSelector(Selector):
 
     def __init__(
             self, selectors: list[Selector],
-            selector_strategy: SelectorStrategy=SelectorStrategy.ALL):
+            selector_strategy: SelectorStrategy=SelectorStrategy.ANY):
         if not selectors:
             raise ValueError(
                 f"{self.__class__.__name__}() requires at least one selector.")
@@ -155,6 +164,12 @@ class MultiSelector(Selector):
             s.get_selector_name(): s
             for s in cls._get_selector_classes()}  # pyright: ignore
 
+        # TODO(aznashwan): read this from definition, or the opts?
+        strategy = SelectorStrategy(
+            val.pop(
+                "selector_strategy",
+                extra.get('selector_strategy', SelectorStrategy.ANY.value)))
+
         undefined_selectors = [
             sname for sname in val if sname not in selectors_map]
         if undefined_selectors:
@@ -168,11 +183,6 @@ class MultiSelector(Selector):
             selector_cls = selectors_map[selector_name]
             selectors.append(
                 selector_cls.from_val(val=selector_def, extra=extra))
-
-        # TODO(aznashwan): read this from definition, or the opts?
-        strategy = val.get(
-            "selector_strategy",
-            extra.get('selector_strategy', SelectorStrategy.ALL))
 
         return cls(selectors, selector_strategy=strategy)
 
@@ -277,6 +287,8 @@ class BaseBooleanSelector(Selector):
 class PRMergedSelector(BaseBooleanSelector):
     """ Returns at most a single match of the form: [{
         "check": True/False,
+        # Same as above, provided for consistency
+        match: <True/False/None>
     }]
     """
     @classmethod
@@ -294,6 +306,8 @@ class PRMergedSelector(BaseBooleanSelector):
 class PRDraftSelector(BaseBooleanSelector):
     """ Returns at most a single match of the form: [{
         "check": True/False,  # depending on whether the PR is a draft or not.
+        # Same as above, provided for consistency
+        match: <True/False/None>
     }]
     """
     @classmethod
@@ -307,6 +321,28 @@ class PRDraftSelector(BaseBooleanSelector):
     def _check_criteria(self, obj: PullRequest) -> bool:
         return obj.draft
 
+
+class PRApprovedSelector(BaseBooleanSelector):
+    """ Checks all PR reviews have been "APPROVED".
+    Will NOT match PRs with no reviews.
+
+    Returns at most a single match on PRs of the form [{
+        "check": "True/False if ALL PR reviws are APPROVED"
+        # Same as above, provided for consistency
+        match: <True/False/None>
+    }]
+    """
+    @classmethod
+    def get_selector_name(cls):
+        return "approved"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _check_criteria(self, obj: PullRequest) -> bool:
+        reviews = list(obj.get_reviews())
+        return bool(reviews) and all([r.state == 'APPROVED' for r in reviews])
 
 
 class BaseRegexSelector(Selector):
@@ -424,7 +460,6 @@ class BaseRegexSelector(Selector):
                 matches[regex] = match
 
             check = self._strategy.get_function()
-            print(f"\n\n### {matches} \n\n")
             if not check([m is not None for m in matches.values()]):
                 LOG.debug(
                     f"{self}.match({obj}): one or more regexes failed to "
@@ -535,6 +570,37 @@ class AuthorRegexSelector(BaseRegexSelector):
         return [{
             "string": obj.user.login,
         }]
+
+
+class AuthorRoleRegexSelector(BaseRegexSelector):
+    """ Checks the role of the author of issues/PRs based on the given regex.
+
+    Returns at most a single match of the form: [{
+        "<rest>": "match results returned by BaseRegexSelector.match(author)..."
+    }]
+    """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "author_role"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest|Issue):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        repo = self._get_repo_for_object(obj)
+        return [{
+            "string": repo.get_collaborator_permission(obj.user.login),
+        }]
+
 
 
 class DescriptionRegexSelector(BaseRegexSelector):
@@ -693,6 +759,78 @@ class MaintainerCommentsRegexSelector(BaseCommentsRegexSelector):
         return "maintainer_comments"
 
 
+class SourceRepoRegexPRSelector(BaseCommentsRegexSelector):
+    """ Selects PRs based on regexes of the name of the source repo of the PR. """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "source_repo"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.head.repo.name,
+        }]
+
+
+class SourceBranchRegexPRSelector(BaseCommentsRegexSelector):
+    """ Selects PRs based on regexes of the source branch of the PR. """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "source_branch"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.head.ref,
+        }]
+
+
+class TargetBranchRegexPRSelector(BaseCommentsRegexSelector):
+    """ Selects PRs based on regexes of the target branch of the PR. """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "target_branch"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, PullRequest):
+            LOG.debug(
+                f"{self}._get_items_to_match({obj}): invalid object param. "
+                "Target object must be of type Issue or PullRequest. "
+                f"Got: {type(obj)}")
+            return []
+
+        return [{
+            "string": obj.base.ref,
+        }]
+
+
 class FileLister():
     """ Lists changed files for PRs or whole file tree for Repos. """
 
@@ -839,6 +977,10 @@ class DiffSelector(Selector):
     @classmethod
     def get_selector_name(cls):
         return "diff"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
 
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None):
@@ -1050,11 +1192,14 @@ class PRsSelector(MultiSelector):
     @classmethod
     def _get_selector_classes(cls) -> list[type]:
         return [
-            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
+            AuthorRegexSelector, AuthorRoleRegexSelector,
+            TitleRegexSelector, DescriptionRegexSelector,
             ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
             DiffSelector, FilesSelector, LastContributionActivitySelector,
             LastContributionCommentSelector, ContributionStateRegexSelector,
-            PRMergedSelector, PRDraftSelector]
+            PRMergedSelector, PRDraftSelector, SourceRepoRegexPRSelector,
+            SourceBranchRegexPRSelector, TargetBranchRegexPRSelector,
+            PRApprovedSelector]
 
 
 class IssuesSelector(MultiSelector):
@@ -1084,6 +1229,7 @@ SELECTOR_CLASSES = [
     # to be define directly instead of needing to pass through the the main
     # Repos/PRs/Issues selectors.
     AuthorRegexSelector,
+    AuthorRoleRegexSelector,
     FilesSelector,
     DiffSelector,
     LastContributionActivitySelector,
@@ -1095,13 +1241,21 @@ SELECTOR_CLASSES = [
     ContributorCommentsRegexSelector,
     MaintainerCommentsRegexSelector,
     ContributionStateRegexSelector,
+    SourceRepoRegexPRSelector,
+    SourceBranchRegexPRSelector,
+    TargetBranchRegexPRSelector,
+    PRApprovedSelector
 ]
 
 
 def get_selector_cls(selector_name: str, raise_if_missing: bool=True) -> typing.Type:
     selector_name_map = {s.get_selector_name(): s for s in SELECTOR_CLASSES}
-    selector = selector_name_map.get(selector_name)
+    if len(selector_name_map) != len(SELECTOR_CLASSES):
+        selector_names = [(cls, cls.s.get_selector_name()) for cls in SELECTOR_CLASSES]
+        raise ValueError(
+            f"Multiple selectors share the same name: {selector_names}")
 
+    selector = selector_name_map.get(selector_name)
     if not selector:
         msg = (
             f"Unknown selector type '{selector_name}'. Supported selectors are: "
