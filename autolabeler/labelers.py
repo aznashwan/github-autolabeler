@@ -173,7 +173,7 @@ class SelectorLabeler(BaseLabeler):
             raise ValueError(
                 f"Missing required fields {missing} in SelectorLabeler definition: {val}")
 
-        supported_selectors = ["prs", "issues", "repo"]
+        supported_selectors = ["pr", "issue", "repo"]
         supported_fields = ["action", "if", "selectors"]
         supported_fields.extend(required_fields)
         supported_fields.extend(supported_selectors)

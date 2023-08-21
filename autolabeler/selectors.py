@@ -53,6 +53,13 @@ class SelectorStrategy(enum.Enum):
                 raise ValueError(f"No action for seletor strategy {other}")
 
 
+class ContributionState(enum.Enum):
+
+    OPEN = "open"
+    CLOSED = "closed"
+    MERGED = "merged"
+
+
 class MatchResult(dict):
     """ Simple wrapper around a dict allows dot access on fields. """
     def __init__(self, d: dict|None=None, reference_key: str|None=None):
@@ -99,6 +106,10 @@ class Selector(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractclassmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        raise NotImplementedError(f"{cls}: supported object types are required.")
+
+    @abc.abstractclassmethod
     def get_selector_name(cls):
         return NotImplemented
 
@@ -127,10 +138,6 @@ class MultiSelector(Selector):
         selectors = self._selectors
         selector_strategy = self._selector_strategy.value
         return f"{self.__class__.__name__}({selectors=}, {selector_strategy=})"
-
-    @abc.abstractclassmethod
-    def _get_supported_target_types(cls) -> list[type]:
-        raise NotImplementedError(f"{cls}: supported object types are required.")
 
     @abc.abstractclassmethod
     def _get_selector_classes(cls) -> list[type]:
@@ -188,7 +195,7 @@ class MultiSelector(Selector):
         if not strategy(selector_matches.values()):
             LOG.info(
                 f"{self}.match({obj}): multi-selector strategy "
-                "{self._selector_strategy} failed on selector resuls "
+                f"{self._selector_strategy} failed on selector resuls "
                 f"{selector_matches}. Returning no matches.")
             return []
 
@@ -220,6 +227,88 @@ class MultiSelector(Selector):
         return match_results
 
 
+class BaseBooleanSelector(Selector):
+    """ Abstracts boolean flag-like selectors like "is_merged". """
+
+    def __init__(self, desired_result: bool|None=None, extra: dict|None=None):
+        self._desired_result = desired_result
+        self._extra = extra or {}
+
+    @abc.abstractmethod
+    def _check_criteria(self, obj: object) -> bool:
+        raise NotImplementedError("Must implement criteria checking logic.")
+
+    @classmethod
+    def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
+        """ Load the selector from a value. """
+        desired = None
+        match val:
+            case None:
+                pass
+            case True|False:
+                desired = val
+            case other:
+                raise TypeError(
+                    f"{cls.__name__}.from_dict() got unsupported definition: {other} "
+                    "Must be a boolean flag or null/None/void.")
+
+        return cls(desired_result=desired, extra=extra)
+
+    def match(self, obj: object) -> list[MatchResult]:
+        """ Returns at most a single match of the form: [{
+            check: <True/False/None>
+            # Same as above, provided for consistency
+            match: <True/False/None>
+        }]
+        """
+        if not isinstance(obj, tuple(self._get_supported_target_types())):
+            return []
+
+        check = self._check_criteria(obj)
+        if self._desired_result != None and self._desired_result != check:
+            return []
+
+        return [MatchResult({
+            "check": check,
+            "match": check
+        })]
+
+
+class PRMergedSelector(BaseBooleanSelector):
+    """ Returns at most a single match of the form: [{
+        "check": True/False,
+    }]
+    """
+    @classmethod
+    def get_selector_name(cls):
+        return "merged"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _check_criteria(self, obj: PullRequest) -> bool:
+        return obj.is_merged()
+
+
+class PRDraftSelector(BaseBooleanSelector):
+    """ Returns at most a single match of the form: [{
+        "check": True/False,  # depending on whether the PR is a draft or not.
+    }]
+    """
+    @classmethod
+    def get_selector_name(cls):
+        return "draft"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    def _check_criteria(self, obj: PullRequest) -> bool:
+        return obj.draft
+
+
+
 class BaseRegexSelector(Selector):
     """ Returns a match based on a provided regexes. """
 
@@ -229,10 +318,6 @@ class BaseRegexSelector(Selector):
         self._regexes = regexes
         self._strategy = SelectorStrategy(strategy)
         self._case_insensitive = case_insensitive
-
-    @abc.abstractclassmethod
-    def _get_supported_target_types(cls) -> list[type]:
-        raise NotImplementedError(f"{cls}: supported object types are required.")
 
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
@@ -339,10 +424,12 @@ class BaseRegexSelector(Selector):
                 matches[regex] = match
 
             check = self._strategy.get_function()
-            if not check(m is None for m in matches.values()):
+            print(f"\n\n### {matches} \n\n")
+            if not check([m is not None for m in matches.values()]):
                 LOG.debug(
                     f"{self}.match({obj}): one or more regexes failed to "
-                    f"satisfy strategy '{self._strategy.value}' '{string}': {matches}")
+                    f"satisfy strategy '{self._strategy.value}' for '{string}': "
+                    f"{matches}")
                 continue
 
             new = {
@@ -393,6 +480,32 @@ class TitleRegexSelector(BaseRegexSelector):
         return [{
             "string": obj.title or "NOTITLE"
         }]
+
+
+class ContributionStateRegexSelector(BaseRegexSelector):
+    """ Checks issues/PRs have the given state (using regexes).
+
+    Returns at most a single match of the form: [{
+        "<rest>": "match results returned by BaseRegexSelector.match()..."
+    }]
+    """
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "state"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest, Issue]
+
+    def _get_items_to_match(self, obj: object) -> list[dict]:
+        if not isinstance(obj, (PullRequest, Issue)):
+            return []
+        state = obj.state
+        return [{
+            "string": state,
+        }]
+
 
 
 class AuthorRegexSelector(BaseRegexSelector):
@@ -814,72 +927,6 @@ class DiffSelector(Selector):
         return [MatchResult(res)]
 
 
-
-class RepoSelector(MultiSelector):
-    @classmethod
-    def get_selector_name(cls) -> str:
-        return "repo"
-
-    @classmethod
-    def _get_supported_target_types(cls) -> list[type]:
-        return [Repository]
-
-    @classmethod
-    def _get_selector_classes(cls) -> list[type]:
-        return [FilesSelector]
-
-
-
-class PRsSelector(MultiSelector):
-    # def __init__(self,
-    #              author: str|None=None,
-    #              author_roles: str|None=None,
-    #              target_repo: str|None=None,
-    #              source_repo: str|None=None,
-    #              target_branch: str|None=None,
-    #              source_branch: str|None=None,
-    #              is_draft: bool|None=None,
-    #              is_approved: bool|None=None,
-    #              title: list[str]|None=None,
-    #              description: list[str]|None=None,
-    #              last_activity: str|None=None):
-    #     pass
-
-    @classmethod
-    def get_selector_name(cls) -> str:
-        return "pr"
-
-    @classmethod
-    def _get_supported_target_types(cls) -> list[type]:
-        return [PullRequest]
-
-    @classmethod
-    def _get_selector_classes(cls) -> list[type]:
-        return [
-            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
-            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
-            DiffSelector, FilesSelector, LastContributionActivitySelector,
-            LastContributionCommentSelector]
-
-
-class IssuesSelector(MultiSelector):
-
-    @classmethod
-    def get_selector_name(cls) -> str:
-        return "issue"
-
-    @classmethod
-    def _get_supported_target_types(cls) -> list[type]:
-        return [Issue]
-
-    @classmethod
-    def _get_selector_classes(cls) -> list[type]:
-        return [
-            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
-            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
-            LastContributionCommentSelector, LastContributionActivitySelector]
-
-
 class BaseLastActivitySelector(metaclass=abc.ABCMeta):
     """ Selects issues/PRs based on the duration in days since last update. """
 
@@ -963,6 +1010,72 @@ class LastContributionCommentSelector(BaseLastActivitySelector):
         return last_update
 
 
+class RepoSelector(MultiSelector):
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "repo"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [Repository]
+
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [FilesSelector]
+
+
+class PRsSelector(MultiSelector):
+    # def __init__(self,
+    #              author: str|None=None,
+    #              author_roles: str|None=None,
+    #              target_repo: str|None=None,
+    #              source_repo: str|None=None,
+    #              target_branch: str|None=None,
+    #              source_branch: str|None=None,
+    #              is_draft: bool|None=None,
+    #              is_approved: bool|None=None,
+    #              title: list[str]|None=None,
+    #              description: list[str]|None=None,
+    #              last_activity: str|None=None):
+    #     pass
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "pr"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [PullRequest]
+
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [
+            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
+            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
+            DiffSelector, FilesSelector, LastContributionActivitySelector,
+            LastContributionCommentSelector, ContributionStateRegexSelector,
+            PRMergedSelector, PRDraftSelector]
+
+
+class IssuesSelector(MultiSelector):
+
+    @classmethod
+    def get_selector_name(cls) -> str:
+        return "issue"
+
+    @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [Issue]
+
+    @classmethod
+    def _get_selector_classes(cls) -> list[type]:
+        return [
+            AuthorRegexSelector, TitleRegexSelector, DescriptionRegexSelector,
+            ContributorCommentsRegexSelector, MaintainerCommentsRegexSelector,
+            LastContributionCommentSelector, LastContributionActivitySelector,
+            ContributionStateRegexSelector]
+
+
 SELECTOR_CLASSES = [
     RepoSelector,
     PRsSelector,
@@ -976,9 +1089,12 @@ SELECTOR_CLASSES = [
     LastContributionActivitySelector,
     LastContributionCommentSelector,
     TitleRegexSelector,
+    PRMergedSelector,
+    PRDraftSelector,
     DescriptionRegexSelector,
     ContributorCommentsRegexSelector,
     MaintainerCommentsRegexSelector,
+    ContributionStateRegexSelector,
 ]
 
 

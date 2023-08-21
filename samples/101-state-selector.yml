@@ -1,0 +1,37 @@
+# This sample showcases the 'state:' selector for issues and PRs.
+
+# This will dynamically create a label for each state for issues/PRs
+# (e.g. "both-issues-and-prs/open" for open issues/PRs)
+both-issues-and-prs:
+  "{ state.match }":
+    color: yellow
+    description: "This Issue/PR is { state.match }."
+    selectors:
+      # NOTE: an empty "state" will match any PR/issue state.
+      state:
+
+# This will dynamically create a label for PRs which have been closed
+# depnding on whether they were merged or not.
+# (e.g. "closed-prs-only/merged" and "closed-prs-only/unmerged")
+closed-prs-only:
+  "{ '' if pr.merged.match else 'un' }merged":
+    color: green
+    description:  |
+      This PR is { pr.state.match }.
+    pr:
+      # Valid options include "open", "closed", and "merged" (latter for PRs only)
+      # Note that any merged PR automatically counts as closed too.
+      state: closed
+      # NOTE: all merged PRs are closed, but not all closed PRs are merged.
+      merged:
+
+# This will dynamically create a label for each of the listed states for issues.
+# (e.g. "issues-only/open" and "issues-only/closed")
+issues-only:
+  "{ issue.state.match }":
+    color: red
+    description: "This issue is { issue.state.match }."
+    selectors:
+      issue:
+        # A list of desired state may also be supplied.
+        state: ['open', 'closed']

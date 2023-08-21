@@ -9,13 +9,14 @@ random-pr-label:
     pr:
       author: "johndoe"
       author_roles: ['admin']
-      title: ["some specific", "title regexes"]
+      title: ["some specific", "title regexes", "to match"]
       description: ["some specific", "description"]
-      diff:
+     diff:
         min: 10
         max: 100
       inactivity: 30
-      is_draft: false
+      draft: false
+      merged: false
       state: open
       approved: false
       target:
