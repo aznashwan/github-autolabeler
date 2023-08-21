@@ -39,6 +39,7 @@ FileContainingObject = typing.Union[Repository, PullRequest]
 class SelectorStrategy(enum.Enum):
     ALL = "all"
     ANY = "any"
+    NONE = "none"
 
     def get_function(self):
         match self:
@@ -46,6 +47,8 @@ class SelectorStrategy(enum.Enum):
                 return all
             case SelectorStrategy.ANY:
                 return any
+            case SelectorStrategy.NONE:
+                return lambda it: all([not v for v in it])
             case other:
                 raise ValueError(f"No action for seletor strategy {other}")
 
@@ -220,8 +223,11 @@ class MultiSelector(Selector):
 class BaseRegexSelector(Selector):
     """ Returns a match based on a provided regexes. """
 
-    def __init__(self, regexes: list[str], case_insensitive: bool=False):
+    def __init__(
+            self, regexes: list[str], case_insensitive: bool=False,
+            strategy: str=SelectorStrategy.ANY.value):
         self._regexes = regexes
+        self._strategy = SelectorStrategy(strategy)
         self._case_insensitive = case_insensitive
 
     @abc.abstractclassmethod
@@ -234,6 +240,7 @@ class BaseRegexSelector(Selector):
         None: will default to an all-capturing regex. (.*)
         str: the regex
         list: list of regexes
+        dict: containing 'regexes' and 'strategy'=all/any/none
 
         Extra options queried:
         case_insensitive: governs regex searching case sensitivity.
@@ -242,6 +249,8 @@ class BaseRegexSelector(Selector):
         if not extra:
             extra = {}
         regexes = [".*"]
+        strategy = SelectorStrategy.ANY.value
+        case_insensitive=extra.get('case_insensitive', False)
         match val:
             case None:
                 pass
@@ -255,19 +264,26 @@ class BaseRegexSelector(Selector):
                         "of elements in list definition. All items must "
                         f"str. Non-str items were: {not_strings}")
                 regexes = val
+            case val if isinstance(val, dict):
+                regexes = val.get("regexes")
+                if not regexes:
+                    raise ValueError(
+                        f"{cls.__name__}.from_val({val}): mapping definition must "
+                        "contain a 'regexes' key.")
+                strategy = val.get("strategy", strategy)
+                case_insensitive = val.get("case_insensitive", case_insensitive)
             case other:
                 raise TypeError(
                     f"{cls.__name__}.from_val({other}): unacceptable value "
                     f"of type {type(other)}: must be str or list[str].")
 
-        return cls(
-            regexes=regexes,
-            case_insensitive=extra.get('case_insensitive', False))
+        return cls(regexes=regexes, strategy=strategy, case_insensitive=case_insensitive)
 
     def __repr__(self) -> str:
         regexes = self._regexes
+        strategy = self._strategy.value
         case_insensitive = self._case_insensitive
-        return f"{self.__class__.__name__}({regexes=}, {case_insensitive=})"
+        return f"{self.__class__.__name__}({regexes=}, {strategy=},{case_insensitive=})"
 
     @abc.abstractmethod
     def _get_items_to_match(selfi, obj: object) -> list[dict]:
@@ -286,6 +302,7 @@ class BaseRegexSelector(Selector):
 
         Returns list of matches of the form: [{
             "case_insensitive": "<case_insensitive setting>",
+            "strategy": "string regex strategy",
             "full": "<full string which matched ALL regexes>",
             "match": "<match part for the first regex (same as match0)>",
             "matchN": "<match part for the Nth regex starting from 0>",
@@ -321,16 +338,20 @@ class BaseRegexSelector(Selector):
 
                 matches[regex] = match
 
-            if any(m is None for m in matches.values()):
+            check = self._strategy.get_function()
+            if not check(m is None for m in matches.values()):
                 LOG.debug(
                     f"{self}.match({obj}): one or more regexes failed to "
-                    f"match string '{string}': {matches}")
+                    f"satisfy strategy '{self._strategy.value}' '{string}': {matches}")
                 continue
 
             new = {
+                "strategy": self._strategy.value,
                 "case_insensitive": self._case_insensitive,
                 "full": item}
-            first = matches[self._regexes[0]]
+            first = {}
+            if matches.get(self._regexes[0]):
+                first = matches[self._regexes[0]]
             new.update(first)
 
             for i, r in enumerate(matches):
@@ -459,10 +480,6 @@ class BaseCommentsRegexSelector(BaseRegexSelector):
 
     @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
-        """ Accepts:
-        str: the regex
-        list: list of regexes
-        """
         # TODO(aznashwan): support explicit dict loading too.
         if not extra:
             extra = {}
@@ -726,7 +743,7 @@ class DiffSelector(Selector):
 
     def match(self, obj: Repository|PullRequest) -> list[MatchResult]:
         """ Returns a single match result of the form: {
-            "target_type": "<what 'type' option the selector had set>"
+            "type": "<what 'type' option the selector had set>"
             "min": "<the min parameter or -inf if not set>",
             "max": "<the max parameter or +inf if not set>",
             -- NOTE: the below results are only returned for PRs.
@@ -750,9 +767,11 @@ class DiffSelector(Selector):
                 f"{self.__class__}.match() got unsupported object type {type(obj)}: {obj}")
             return []
 
-        res = {"min": self._min, "max": self._max}
+        res = {
+            "min": self._min,
+            "max": self._max,
+            "type": self._change_type}
         if isinstance(obj, Repository):
-            # TODO(aznashwan): ideally pre-define the labels on repos here.
             return [MatchResult(res)]
 
         changes = 0

@@ -47,17 +47,17 @@ to perform the querying/labelling/commenting/closing operations it will be makin
 
 If intending to run the utility directly and having it impersonate our GitHub user in
 its automatic labelling or reply actions, we'll need to create a
-[Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+[Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
 It is recommended to [create a Fine-Grained Access Token](
 https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
 with the following permissions:
 
 Repository Permissions:
-    - Contents: Read-only (used for reading main Repo labels and files)
-    - Issues: Read and write (used to read, label, comment, and close issues)
-    - Pull Requests: Read and write (used to read, label, comment, and close PRs)
-    - Metadata: Read-only (implied by the above Issue/PR permissions)
+* Contents: Read-only (used for reading main Repo labels and files)
+* Issues: Read and write (used to read, label, comment, and close issues)
+* Pull Requests: Read and write (used to read, label, comment, and close PRs)
+* Metadata: Read-only (implied by the above Issue/PR permissions)
 
 
 ### GitHub Action Token Setup
@@ -92,53 +92,51 @@ Here's a simple config showcasing some common patterns to start us off:
 # set on PRs/Issues. (help-wanted/good-first-issue and help-wanted/more-eyes)
 help-wanted:
   good-first-issue:
-    label-color: 0e8a16  # green
-    label-description: This issue is a great starting point for first time contributors.
+    color: green
+    description: This issue is a great starting point for first time contributors.
   more-eyes:
-    label-color: e4e669  # yellow
-    label-description: This issue/PR requires more maintainers to weigh in.
+    color: yellow
+    description: This issue/PR requires more maintainers to weigh in.
 
 # This will define a label named "bug" which will automatically be associated
 # with issues/PRs whose titles/descriptions match the provided regexes.
 bug:
-  label-color: d73a4a  # red
-  label-description: This label signifies the Issue/PR is about a bug.
+  color: red
+  description: This label signifies the Issue/PR is about a bug.
   selectors:
-    regex:
-      title: "(issue|bug|fix|problem|failure|error)"
-      description: "(issue|bug|problem|failure|error)"
+    title: "(issue|bug|fix|problem|failure|error)"
+    description: "(issue|bug|problem|failure|error)"
 
-      # This will also make the label be applied to PRs/Issues where a maintainer
-      # comments the given magic string on a single line within a comment.
-      comments: "^(/label-me-as bug)$"
-      maintainer-comments-only: true  # default is true anyway
+    # This will also make the label be applied to PRs/Issues where a maintainer
+    # comments the given magic string on a single line within a comment.
+    maintainer_comments: "^(/label-me-as bug)$"
 
 # This will auto-generate a unique label for any YAML file in the 'samples' directory.
-sample-{files-name-regex-group-1}:  # {$SELECTOR_NAME-$FIELD_NAME-$RESULT_NAME}
-  label-color: e4e669  # yellow
-  # "group-0" is the entire matching filepath.
-  label-description: This label was created for sample file '{files-name-regex-group-0}'.
+sample-{ files.name_regex.groups[0] }:  # { $SELECTOR_NAME.$FIELD_NAME.$RESULT_NAME }
+  color: yellow
+  description: This label was created for sample file '{ files.name_regex.full }'.
   selectors:
     files:
-      name-regex: "samples/(.*).yaml"
+      name_regex: "samples/(.*).yaml"
 
 # This will automatically label and close all PRs which contain more than 10k lines of code.
 needs-splitting:
-  label-color: d73a4a  # red
-  label-description: This PR has more than {diff-min} lines and must be split.
+  color: red
+  description: This PR has more than {diff.min} lines and must be split.
   selectors:
+    author:
     diff:
        type: total  # total = additions + deletions
        min: 10000
+  if: diff.min != 0
+  # Will only trigger on PRs if the 'diff' selector returns a match.
   action:
-    # Will only trigger on PRs if the 'diff' selector returns a match.
-    if: "{diff-min}"
     perform: close
     # NOTE: can include markdown directives in reply comment.
     comment: |
       Thank you for your contribution to our project! :smile:
       Unfortunately, this PR is *too large to be reviewed effectively*. :disappointed:
-      Please break down the changes into individual PRs no larger than {diff-min} lines.
+      Please break down the changes into individual PRs no larger than {diff.min} lines.
 ```
 
 ### Direct Execution
@@ -181,7 +179,7 @@ $ docker run -v /tmp:/tmp -e GITHUB_TOKEN="<your token>" \
     generate
 
 # You can review the list of available arguments using:
-$ docker run ghcr.io/cloudbase/gh-auto-labeler:main help
+$ docker run ghcr.io/cloudbase/gh-auto-labeler:main -h
 ```
 
 ### GitHub Actions
@@ -237,37 +235,42 @@ from the following constructs:
 Label names are string keys which map to the definitions of so-called `labelers`.
 
 Labeler properties include:
-    * `label-color`: 6-hex-digit color for the label.
-    * `label-description`: String description of the label.
-    * `selectors`: A mapping of pre-defined selectors which match against
-                   repository files, Issue/PR titles/descriptions/properties,
-                   and more. The matches of the selectors can be used in both
-                   the label's name, as well as the `label-description`.
-    * `action`: An action to take based on one or more `selector` matches.
+
+* `color`: 6-hex-digit color for the label or one one of the pre-defined colors
+  options.
+* `description`: String description of the label.
+* `selectors`: A mapping of pre-defined selectors which match against
+               repository files, Issue/PR titles/descriptions/properties,
+               and more. The matches of the selectors can be used in both
+               the label's name, as well as the `description`.
+* `action`: An action to take based on one or more `selector` matches.
 
 ```yaml
 # This will auto-generate a label named 'my-prefix/label-for-XYZ'
 # depending on selector matches.
 my-prefix:
   # NOTE: selector results can be referenced in label names too
-  # in this format: "{$SELECTOR_NAME-$SELECTOR_FIELD-$SELECTOR_RESULT}"
-  label-for-{selector-1-option-1-result-1}:
-    label-color: 0e8a16  # green
-    label-description: |
-        This is an arbitrary label description string. It can also
-        reference selector matches like: {selector-1-option-1-result-1}
+  # in this format: "{ $SELECTOR_NAME.$SELECTOR_FIELD.$SELECTOR_RESULT }"
+  label-for-{ selector_1.option_1.result_1 }:
+    color: 0e8a16  # green
+    description: |
+        This is an arbitrary label description string.
+        It can also reference selector matches using:
+        - { selector_1.option_1.result_1 }
+        - { selector_2.option_2.result_2 if selector_1 }
     selector:
-      selector-1:
-        # NOTE: the "result-N" part depends on the selector's implementation.
-        option-1: "<some property to match as 'selector-1-option-1-result-N'>"
-      selector-2:
-        option-2: "<some property to match as 'selector-2-option-2-result-N'>"
+      selector_1:
+        # NOTE: the "result_N" part depends on the selector's implementation.
+        option_1: "<some property to match as 'selector_1.option_1.result_N'>"
+      selector_2:
+        option_2: "<some property to match as 'selector_2.option_2.result_N'>"
+    # This will make the label only be applied if both selectors match.
+    if: selector_1 and selector_2
     action:
-      # You can reference as many selectors as you need to decide
-      # whether to apply the label and execute an action or not:
-      if: "{selector-1-option-1-result-1} {selector-2-option-2-result-2}"
       perform: close
-      comment: This PR/Issue will be closed now.
+      comment: |
+        This PR/Issue will be closed now because both selectors returned \
+        { selector_1.option_1.result_1 }.
 ```
 
 <table>
@@ -280,8 +283,8 @@ my-prefix:
 
 ```yaml
 example-static-label:
-  label-color: 0e8a16  # green
-  label-description: Description.
+  color: green
+  description: Example Description.
 ```
 
 </td>
@@ -292,8 +295,8 @@ Defines a *static label* named `example-static-label`.
 </td>
 <td>
 
-Will get created and managed on Repositories.
-Needs to be manually set by users on PRs/Issues.
+Will get created and managed at the Repo level.
+Will need to be manually set by maintainers on PRs/Issues.
 
 </td>
 </tr>
@@ -304,11 +307,11 @@ Needs to be manually set by users on PRs/Issues.
 ```yaml
 example-prefix:
   example-sublabel-1:
-    label-color: 0e8a16  # green
-    label-description: Description 1.
+    color: green
+    description: Example Description 1.
   example-sublabel-1:
-    label-color: e4e669  # yellow
-    label-description: Description 2.
+    color: yellow
+    description: Example Description 2.
 ```
 
 </td>
@@ -319,8 +322,8 @@ Defines *two namespaced static labels* named `example-prefix/example-sublabel-{1
 </td>
 <td>
 
-Will get created and managed on Repositories.
-Need to be manually set by users on PRs/Issues.
+Will get created and managed at the Repo level.
+Will need to be manually set by maintainers on PRs/Issues.
 
 </td>
 </tr>
@@ -329,12 +332,14 @@ Need to be manually set by users on PRs/Issues.
 <td>
 
 ```yaml
-example-selector-{selector-1-option-1-result-1}:
-  label-color: 0e8a16  # green
-  label-description: Description 1.
+example-selector-{ selector_1.option_1.result_N }:
+  color: green
+  description: |
+    This label was automatically generated for \
+    { selector_1.option_1.result_N }.
   selector:
-    selector-1:
-      option-1: "<some match param>"
+    selector_1:
+      option_1: "<some match params>"
 ```
 
 </td>
@@ -345,7 +350,7 @@ Defines a *new label for every selector match* with the given format.
 </td>
 <td>
 
-Will get created and managed on Repositories IF the selector matches repos.
+Will get created and managed at the Repo level IF the selector matches.
 Will get automatically created and set on Issues/PRs IF the selector matches
 Issues/PRs.
 
@@ -357,15 +362,20 @@ Issues/PRs.
 
 ```yaml
 example-action-label:
-  label-color: 0e8a16  # green
-  label-description: Description 1.
+  color: green
+  description: Example Description.
   selector:
-    selector-1:
-      option-1: "<some match param>"
+    s1:
+      o1: "<some match param>"
+  if: s1.o1.get("result_N") is not None
   action:
-      if: "{selector-1-option-1-result-1}"
-      perform: close
-      comment: This PR/Issue will be closed now.
+    perform: |
+        'close' if s1.o1.get("result_N") == 42 \
+        else 'open'
+    comment: |
+        This PR/Issue will be \
+        {'close' if s1.o1.get("result_N") == 42 \
+        else 're-open'}ed now.
 ```
 
 </td>
@@ -377,7 +387,7 @@ IF the selector matches.
 </td>
 <td>
 
-Will get created and managed on Repositories IF the selector matches repos.
+Will get created and managed at the Repo level IF the selector matches.
 Will get automatically created and set on Issues/PRs IF the selector matches
 Issues/PRs.
 Will close PRs/Issues IF the selector returns any matches.
@@ -388,65 +398,107 @@ Will close PRs/Issues IF the selector returns any matches.
 
 ### Selectors
 
-Selectors are what determine whether a label will get applied or not.
+Selectors are what determine whether a label will get applied to the given
+target or not.
 
 Please see the [Basic Labelers](#basic-labelers) section on how to use
 selectors within your labelers.
 
-#### Files Selector
+#### Regular Expression-based selectors
 
-A selector for matching files with the Repo/PR.
+**ALL** selectors which accept string arguments for matching (e.g. the "author"
+selector which matches the user ID of a PR/Issue's author) actually accept
+Regular Expression(s) as arguments in multiple forms.
 
 ```yaml
-unique-label-for-{files-name-regex-group-0}:
-  label-color: e4e669  # yellow
-  label-description: |
+regexes-example-label:
+  color: teal
+
+  selectors:
+    # An empty regex selector is an implicit catchall regex. (.*)
+    author:    # equivalent with `author: null`
+
+    # A single string is interpreted as a single regex which *must* match.
+    author: "^(user123)$"  # Will only match PRs/Issues from `user123`.
+
+    # A list of strings is interpreted as a list of regexes, *any* of which can match.
+    author:
+      - "^(user123)$"
+      - "^(user456)$"
+
+    # A mapping *must* contain the 'regexes' key and can define additional properties.
+    author:
+      strategy: all     # options are: [any]/all/none
+      case_insensitive: true
+      regexes: ["^(user)", "([0-9]{3})$"]
+
+  description: |
+    When a regex selector matches, it will return the following results:
+    - { author.full }: the full string which matched the regex(es)
+    - { author.match }: the exact substring which matched the *first* regex
+    - { author.groups }: list of match groups for the *first* regex
+    # NOTE: regex numbering starts from 0, i.e. `author.match0 == author.match`
+    - { author.matchN }: the exact substring which matched the Nth regex
+    - { author.groupsN }: list of match groups for the Nth regex
+    - { author.strategy }: string containing the regex strategy (all/any/none)
+    - { author.case_insensitive }: bool flag indicating case sensitivity
+```
+
+#### Author Regex Selector
+
+The `author:` selector is a [Regular Expression-based selector](#regular-expression-based-selectors)
+which matches the ID of the author of an Issue/PR.
+
+#### Title Regex Selector
+
+The `title:` selector is a [Regular Expression-based selector](#regular-expression-based-selectors)
+which matches the title of an Issue/PR.
+
+#### Description Regex Selector
+
+The `description:` selector is a [Regular Expression-based selector](#regular-expression-based-selectors)
+which matches the description of an Issue/PR.
+
+#### Comments Regex Selector
+
+The `comments:` selector is a [Regular Expression-based selector](#regular-expression-based-selectors)
+which matches the comments of an Issue/PR.
+
+Note that it returns an individual match for each comment.
+
+#### Maintainer Comments Regex Selector
+
+The `maintainer_comments:` selector is a [Regular Expression-based selector](#regular-expression-based-selectors)
+which matches the comments let of by project mantainers on an Issue/PR.
+
+Note that it returns an individual match for each comment.
+
+#### Files Selector
+
+A selector for matching file paths on Repos/PRs.
+
+```yaml
+unique-label-for-{ files.name_regex.groups[0] }:
+  color: yellow
+  description: |
       This label was created especially for the file whose repo path is:
-      {files-name-regex-group-0}
+      { files.name_regex.full }
   selector:
     files:
-      name-regex: "(.*).txt"
+      case_insensitive: false
+      name_regex: "(.*).txt"
 ```
 
 Params:
-* `name-regex`: regular expression to match against the full filepaths
+* `name_regex`: regular expression to match against the full filepaths
                 of all files within the Repository/Pull Request.
+* `case_insensitive`: whether or not the regex should be case insensitive.
 
 Result keys:
-* `files-name-regex-group-0`: the whole filepath, relative to the repo root,
-                              which matched
-* `files-name-regex-group-N`: capture group number N-1 (since `0` is always
-                              the whole match)
+* `files.name_regex.full`: full file path which matched the regex.
+* `files.name_regex.match`: the portion of the filename which matched the regex.
+* `files.name_regex.groups[N]`: the zero-indexed Nth capture group of the regex.
 
-#### Comments Selector
-
-A selector for matching regexes within comment strings in Issues/PRs.
-
-```yaml
-bug:
-  label-color: d73a4a  # red
-  label-description: This label was defined by a comment.
-  selectors:
-    regex:
-      case-insensitive: true  # default is false
-
-      # This will make the label be applied to PRs/Issues whose titles/descriptions
-      # match the given regex. (in this case, some simple keywords)
-      title: "(issue|bug|fix|problem|failure|error)"
-      description: "(issue|bug|problem|failure|error)"
-
-      # This will also make the label be applied to PRs/Issues where a maintainer
-      # comments the given magic string on a single line within a comment.
-      comments: "^(/label-me-as bug)$"
-      maintainer-comments-only: true  # default is true anyway
-```
-
-Result keys:
-* `regex-title-group-N`: capture groups for the title Regex. (0 = whole title)
-* `regex-description-group-N`: capture groups for the description Regex. (0 = whole descr)
-* `regex-comments-group-N`: capture groups for the title Regex. (0 = whole comment)
-* `regex-comments-maintainer`: present only if the latest comment was from
-                               a maintainer.
 
 #### Diff Selector
 
@@ -455,8 +507,8 @@ A selector for matching diff sizes for PRs.
 ```yaml
 pr-size-measure:
   small:
-    label-color: 0075ca
-    label-description: This PR is between {diff-min} and {diff-max} lines of code.
+    color: 0075ca
+    description: This PR is between {diff.min} and {diff.max} lines of code.
     selectors:
       diff:
         # Can be: additions/deletions/total/net (net = additions - deletions)
@@ -465,8 +517,8 @@ pr-size-measure:
         max: 1000
 
   large:
-    label-color: d73a4a
-    label-description: This PR is over {diff-min} lines of code.
+    color: d73a4a
+    description: This PR is over {diff.min} lines of code.
     selectors:
       diff:
         # NOTE: omitting either the min/max will set them to -/+ Infinity.
@@ -474,43 +526,41 @@ pr-size-measure:
 ```
 
 Result keys:
-* `diff-min`: the 'min' setting on the diff selector.
-* `diff-max`: the 'max' setting on the diff selector.
-* `diff-total`: the total diff size (additions + deletions)
-* `diff-addition`: the number of added lines.
-* `diff-deletions`: the number of deleted lines.
-* `diff-net`: the net diff (additions - deletions)
+* `diff.min`: the inclusive 'min' setting on the diff selector.
+* `diff.max`: the NON-inclusive 'max' setting on the diff selector.
+* `diff.total`: the total diff size (additions + deletions)
+* `diff.addition`: the number of added lines.
+* `diff.deletions`: the number of deleted lines.
+* `diff.net`: the net diff (additions - deletions)
+* `diff.files`: a mapping between full filenames and their diff stats:
+    * `diff.files[NAME].{min,max,total,additions,deletion,net}`: individual
+      diff stats for each changed file.
 
 ### Actions
 
 [Labelers](#basic-labelers) can declare a singular `action` to be executed based
 on whether one or more [selectors](#selectors) have fired or not.
 
-#### Closing Action
-
-The Closing action can close/reopen an Issue/PR based on one or more selectors
-firing.
-
 ```yaml
 one-liner-only-file:
-    label-color: d73a4a  # red
-    label-description: |
-        This file can only ever have PRs created which are at most {diff-min} LoC:
-        {files-name-regex-group-0}
-    if: diff.files.get(files.name_regex.groups[0]) > diff.min
+    color: d73a4a  # red
+    description: |
+        This file can only ever have PRs created which are at most {diff.min} LoC:
+        { files.name_regex.full }.
+    if: diff.files.get(files.name_regex.full, 0) > diff.min
     selectors:
         files:
             # will match this exact path:
-            name-regex: "path/to/untouchable/file.txt"
+            name_regex: "path/to/some/oneliner/file.txt"
         diff:
-            # will match any diff with at least 10 lines of code.
-            min: 10
+            # will match any diff with at least 1 changed line of code.
+            min: 1
     action:
         perform: close
         comment: |
             Unfortunately, we do not currently accept any major contributions to
-            the file: {files.name_regex}
-            Please only change the file {diff.min} lines at a time.
+            the file: { files.name_regex.full }
+            Please only change the file { diff.min } lines at a time.
 ```
 
 ## Advanced Usage
