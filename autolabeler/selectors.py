@@ -882,6 +882,10 @@ class FilesSelector(Selector):
         return "files"
 
     @classmethod
+    def _get_supported_target_types(cls) -> list[type]:
+        return [Repository, PullRequest]
+
+    @classmethod
     def from_val(cls, val: object|None=None, extra: dict|None=None) -> Self:
         if not isinstance(val, dict):
             raise NotImplementedError(
