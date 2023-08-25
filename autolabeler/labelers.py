@@ -101,19 +101,8 @@ class BaseLabeler(metaclass=abc.ABCMeta):
     """
 
     @abc.abstractmethod
-    def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
-        _ = repo
-        return NotImplemented
-
-    @abc.abstractmethod
-    def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
-        _ = pr
-        return NotImplemented
-
-    @abc.abstractmethod
-    def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
-        _ = issue
-        return NotImplemented
+    def get_labels_for_object(self, obj: Repository|PullRequest|Issue):
+        raise NotImplemented("No labelling implementation.")
 
 
 class SelectorLabeler(BaseLabeler):
@@ -326,7 +315,7 @@ class SelectorLabeler(BaseLabeler):
             f"{new_labels_map} for selector matches: {selector_matches}")
         return list(new_labels_map.values())
 
-    def get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
+    def _get_labels_for_repo(self, repo: Repository) -> list[LabelParams]:
         # If this a simple label with a static name, it always applies to the repo.
         try:
             name = expr.format_string_with_expressions(
@@ -355,11 +344,11 @@ class SelectorLabeler(BaseLabeler):
         return self._get_labels_for_selector_matches(
             self._run_selectors(obj))
 
-    def get_labels_for_pr(self, pr: PullRequest) -> list[LabelParams]:
-        return self._get_nonstatic_labels(pr)
+    def get_labels_for_object(self, obj: Repository|PullRequest|Issue) -> list[LabelParams]:
+        if isinstance(obj, Repository):
+            return self._get_labels_for_repo(obj)
+        return self._get_nonstatic_labels(obj)
 
-    def get_labels_for_issue(self, issue: Issue) -> list[LabelParams]:
-        return self._get_nonstatic_labels(issue)
 
 
 def load_labelers_from_config(

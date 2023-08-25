@@ -15,8 +15,6 @@
 import logging
 
 from github import Github
-from github.Issue import Issue
-from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from autolabeler import labelers
@@ -47,9 +45,6 @@ class LabelsManager():
         self._labelers_config = labelers_config
         self._labelers = labelers.load_labelers_from_config(labelers_config)
 
-        # HACK(aznashwan): find better way to call appropriate labelling func.
-        self._labelling_operation = None
-
         parts = target_str.split('/')
         if len(parts) not in range(2, 5):
             raise ValueError(
@@ -76,20 +71,12 @@ class LabelsManager():
         self._labelling_target = targets.RepoLabelsTarget(client, user, repo)
         match target_type:
             case None | "":
-                self._labelling_operation = lambda l, t: l.get_labels_for_repo(t)
+                pass
             case 'issue' | 'pull':
                 # NOTE(aznashwan): `ObjectLabellingTarget` can handle both
                 # issues and PRs transparently:
                 self._labelling_target = targets.ObjectLabellingTarget(
                     client, user, repo, target_type, target_id)
-                target = self._labelling_target.get_target_handle()
-                if isinstance(target, PullRequest):
-                    self._labelling_operation = lambda l, t: l.get_labels_for_pr(t)
-                elif isinstance(target, Issue):
-                    self._labelling_operation = lambda l, t: l.get_labels_for_issue(t)
-                else:
-                    raise ValueError(
-                        f"Unsupported target handle: {target} ({type(target)})")
             case 'issues' | 'pulls':
                 raise NotImplementedError(
                     "Multi issue/PR currently unsupported.")
@@ -106,8 +93,8 @@ class LabelsManager():
         labels = []
         for labeler in self._labelers:
             labels.extend(
-                self._labelling_operation(
-                    labeler, self._labelling_target.get_target_handle()))  # pyright: ignore
+                labeler.get_labels_for_object(
+                    self._labelling_target.get_target_handle()))
         return labels
 
     def sync_labels(self, remove_obsolete=True) -> list[LabelParams]:
